@@ -1,0 +1,32 @@
+service:
+  name: pricing-api
+  owner: commerce-team
+  criticality: medium
+
+runtime:
+  language: dotnet
+  version: "10"
+
+compute:
+  type: container-apps
+  minReplicas: 0
+  maxReplicas: 5
+
+data:
+  postgres: true
+
+messaging:
+  serviceBus:
+    queues:
+      - price-update
+
+security:
+  publicIngress: false
+  workloadIdentity: true
+
+observability:
+  appInsights: true
+  alerts: standard
+
+cost:
+  monthlyBudgetEur: 80
