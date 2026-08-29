@@ -1,0 +1,33 @@
+service:
+  name: Pricing_API
+  owner: commerce-team
+  criticality: extreme
+
+runtime:
+  language: node
+  version: "22"
+
+compute:
+  type: aks
+  minReplicas: 8
+  maxReplicas: 2
+
+data:
+  postgres: true
+
+messaging:
+  serviceBus:
+    queues:
+      - price-update
+      - price-update
+
+security:
+  publicIngress: true
+  workloadIdentity: false
+
+observability:
+  appInsights: false
+  alerts: custom
+
+cost:
+  monthlyBudgetEur: 0

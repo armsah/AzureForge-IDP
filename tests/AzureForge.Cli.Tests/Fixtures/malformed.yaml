@@ -1,0 +1,9 @@
+service:
+  name: pricing-api
+  owner: commerce-team
+runtime:
+  language: dotnet
+  version: "10"
+compute:
+  type: container-apps
+  minReplicas: [this is not valid for an integer

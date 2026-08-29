@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AzureForge.Cli/AzureForge.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AzureForge.Cli.Tests/AzureForge.Cli.Tests.csproj" />
+  </Folder>
+</Solution>
