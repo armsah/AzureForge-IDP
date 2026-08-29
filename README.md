@@ -6,21 +6,142 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-Current implementation phase: **P0 — Platform definition, golden path, and guardrails**.
+**P1 complete — C# CLI and YAML service-spec validation.**
 
-## P0 Documentation
+Next implementation phase: **P2 — Terraform module library**.
+
+## Current Capabilities
+
+AzureForge currently provides:
+
+- a declarative YAML service specification;
+- a .NET 10 C# CLI;
+- YAML parsing into a typed service model;
+- golden-path and catalog validation;
+- field-level validation errors;
+- deterministic CLI exit codes;
+- automated parser and validator tests.
+
+Infrastructure provisioning is not implemented yet. Terraform modules are introduced in P2.
+
+## CLI
+
+The P1 CLI validates an AzureForge service specification before it reaches later infrastructure-generation stages.
+
+Validate the example service:
+
+```powershell
+dotnet run --project ".\src\AzureForge.Cli" -- validate ".\examples\pricing-api.yaml"
+```
+
+Expected output:
+
+```text
+Valid AzureForge service specification: pricing-api
+```
+
+A successful validation returns exit code `0`.
+
+Invalid specifications return field-level validation errors and exit code `4`.
+
+For example:
+
+```powershell
+dotnet run --project ".\src\AzureForge.Cli" -- validate ".\tests\AzureForge.Cli.Tests\Fixtures\invalid-policy.yaml"
+```
+
+Malformed YAML is also rejected before domain validation.
+
+## Testing
+
+Build the solution:
+
+```powershell
+dotnet build
+```
+
+Run the automated test suite:
+
+```powershell
+dotnet test
+```
+
+P1 includes tests covering:
+
+- valid golden-path specifications;
+- malformed YAML;
+- unsupported runtimes;
+- mandatory workload identity;
+- invalid replica configuration;
+- duplicate Service Bus queues.
+
+## P0 — Platform Definition
+
+The P0 design artifacts establish AzureForge's customers, golden path, guardrails, architecture, and provisioning security boundary.
 
 - [`docs/product-brief.md`](docs/product-brief.md) — internal customers, value proposition, platform boundary, and success criteria.
 - [`docs/golden-path.md`](docs/golden-path.md) — initial supported developer experience and service pattern.
 - [`docs/guardrails.md`](docs/guardrails.md) — mandatory controls, defaults, and restricted choices.
 - [`docs/architecture/overview.md`](docs/architecture/overview.md) — control-plane and provisioning architecture.
 - [`docs/decisions/0001-pr-driven-provisioning.md`](docs/decisions/0001-pr-driven-provisioning.md) — security decision for PR-driven provisioning.
-- [`examples/pricing-api.yaml`](examples/pricing-api.yaml) — representative future AzureForge service specification.
+- [`examples/pricing-api.yaml`](examples/pricing-api.yaml) — representative AzureForge service specification.
+
+## P1 — Service-Spec Validation CLI
+
+P1 turns the service specification defined in P0 into an executable platform contract.
+
+The implementation includes:
+
+- `System.CommandLine`-based C# CLI;
+- YamlDotNet parsing;
+- strongly typed service-spec models;
+- golden-path domain validation;
+- explicit process exit codes;
+- xUnit parser and validator tests;
+- valid and invalid YAML test fixtures.
+
+See [`docs/p1-cli-validation.md`](docs/p1-cli-validation.md) for the P1 design and validation rules.
+
+## Architecture Direction
+
+AzureForge separates the developer-facing control plane from privileged infrastructure execution.
+
+```text
+Developer
+    |
+    | service specification
+    v
+AzureForge CLI / API
+    |
+    | validation
+    v
+Catalog + Guardrails
+    |
+    | deterministic generation
+    v
+Terraform Desired State
+    |
+    | pull request
+    v
+Review + Policy Checks
+    |
+    v
+GitHub Actions
+    |
+    | workload identity federation
+    v
+Terraform
+    |
+    v
+Azure
+```
+
+The AzureForge API is not intended to hold broad Azure subscription `Owner` or `Contributor` permissions. Privileged Terraform operations will execute through reviewed GitHub workflows using federated identity.
 
 ## Roadmap
 
 - [x] P0 — Define platform customers, golden path, and guardrails
-- [ ] P1 — Build C# CLI that validates YAML service specs
+- [x] P1 — Build C# CLI that validates YAML service specs
 - [ ] P2 — Create Terraform module library
 - [ ] P3 — Bootstrap remote state and GitHub OIDC
 - [ ] P4 — Build service-spec to Terraform variable generation
