@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P2 complete — reusable Terraform foundation modules and composition tests.**
+**P3 complete — Azure Blob remote state and secretless GitHub OIDC authentication.**
 
-Next implementation phase: **P3 — Remote state and GitHub OIDC bootstrap**.
+Next implementation phase: **P4 — Service-spec to Terraform variable generation**.
 
 ## Current Capabilities
 
@@ -139,6 +139,21 @@ The current P2 test suite verifies:
 
 P2 validation runs without Azure credentials and does not create live Azure resources.
 
+## P3 — Remote State and GitHub OIDC
+
+P3 establishes the remote Terraform state and secretless CI authentication foundation:
+
+- Azure Blob Storage for Terraform remote state;
+- blob versioning and delete-retention protection;
+- a user-assigned managed identity for GitHub Actions;
+- a federated identity credential scoped to the AzureForge repository and trusted branch;
+- container-scoped `Storage Blob Data Contributor` access for Terraform state;
+- a GitHub Actions OIDC smoke workflow proving Azure login and backend initialization without long-lived credentials.
+
+See [`docs/p3-remote-state-oidc.md`](docs/p3-remote-state-oidc.md).
+
+The GitHub workflow uses short-lived OIDC tokens and does not require an Azure client secret, storage account key, or SAS token.
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -180,7 +195,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P0 — Define platform customers, golden path, and guardrails
 - [x] P1 — Build C# CLI that validates YAML service specs
 - [x] P2 — Create Terraform module library
-- [ ] P3 — Bootstrap remote state and GitHub OIDC
+- [x] P3 — Bootstrap remote state and GitHub OIDC
 - [ ] P4 — Build service-spec to Terraform variable generation
 - [ ] P5 — Generate pull request or artifact for provisioning
 - [ ] P6 — Provision Container Apps golden path
