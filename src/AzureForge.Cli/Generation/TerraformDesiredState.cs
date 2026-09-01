@@ -1,0 +1,24 @@
+namespace AzureForge.Cli.Generation;
+
+public sealed record TerraformDesiredState(
+    string ServiceName,
+    string Team,
+    string Environment,
+    string Location,
+    string ResourceGroupName,
+    string ManagedIdentityName,
+    string LogAnalyticsWorkspaceName,
+    string ApplicationInsightsName,
+    string RuntimeLanguage,
+    string RuntimeVersion,
+    string ComputeType,
+    int MinReplicas,
+    int MaxReplicas,
+    bool PostgresEnabled,
+    IReadOnlyList<string> ServiceBusQueues,
+    bool PublicIngress,
+    bool WorkloadIdentity,
+    bool ApplicationInsightsEnabled,
+    string Alerts,
+    decimal MonthlyBudgetEur,
+    IReadOnlyDictionary<string, string> Tags);

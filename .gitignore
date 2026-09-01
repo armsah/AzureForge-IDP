@@ -453,7 +453,11 @@ terraform.rc
 .env
 .env.*
 !.env.example
+
 # Local Terraform variable files
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+
+# P4 deterministic golden-test fixtures
+!tests/AzureForge.Cli.Tests/Fixtures/Golden/*.tfvars.json

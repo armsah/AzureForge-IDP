@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P3 complete — Azure Blob remote state and secretless GitHub OIDC authentication.**
+**P4 complete - deterministic service-spec to Terraform variable generation.**
 
-Next implementation phase: **P4 — Service-spec to Terraform variable generation**.
+Next implementation phase: **P5 - Provisioning pull request or artifact generation**.
 
 ## Current Capabilities
 
@@ -24,8 +24,11 @@ AzureForge currently provides:
 - reusable Terraform foundation modules;
 - native Terraform module tests;
 - a tested Terraform composition example.
+- deterministic service-spec to Terraform desired-state generation;
+- canonical `.tfvars.json` serialization;
+- golden-file testing for generated Terraform input.
 
-Live application infrastructure provisioning is not implemented yet. P2 establishes the reusable Terraform foundation that later provisioning phases will compose.
+Live application infrastructure provisioning is not implemented yet. P4 now provides the deterministic desired-state boundary that later provisioning phases will consume.
 
 ## CLI
 
@@ -154,6 +157,33 @@ See [`docs/p3-remote-state-oidc.md`](docs/p3-remote-state-oidc.md).
 
 The GitHub workflow uses short-lived OIDC tokens and does not require an Azure client secret, storage account key, or SAS token.
 
+## P4 - Terraform Variable Generation
+
+P4 turns a validated AzureForge service specification into deterministic Terraform input variables.
+
+The implementation includes:
+
+- a typed Terraform desired-state model;
+- deterministic mapping from validated service specifications;
+- platform-owned defaults for the initial `dev` environment and `westeurope` region;
+- AzureForge resource naming and mandatory tag generation;
+- stable ordering for Service Bus queues and tags;
+- canonical snake_case JSON serialization;
+- a `generate` CLI command that writes `.tfvars.json`;
+- golden-file tests proving generated desired state remains stable.
+
+Example:
+
+```powershell
+dotnet run --project .\src\AzureForge.Cli -- generate `
+  .\examples\pricing-api.yaml `
+  --output .\generated\pricing-api.tfvars.json
+```
+
+See [`docs/p4-terraform-variable-generation.md`](docs/p4-terraform-variable-generation.md).
+
+P4 performs no Azure API calls and creates no infrastructure. The generated file is the deterministic desired-state input consumed by later provisioning phases.
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -196,7 +226,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P1 — Build C# CLI that validates YAML service specs
 - [x] P2 — Create Terraform module library
 - [x] P3 — Bootstrap remote state and GitHub OIDC
-- [ ] P4 — Build service-spec to Terraform variable generation
+- [x] P4 — Build service-spec to Terraform variable generation
 - [ ] P5 — Generate pull request or artifact for provisioning
 - [ ] P6 — Provision Container Apps golden path
 - [ ] P7 — Add optional Service Bus/PostgreSQL modules

@@ -4,5 +4,6 @@ using System.CommandLine;
 var rootCommand = new RootCommand("AzureForge internal developer platform CLI");
 
 rootCommand.Subcommands.Add(ValidateCommand.Create());
+rootCommand.Subcommands.Add(GenerateCommand.Create());
 
 return rootCommand.Parse(args).Invoke();
