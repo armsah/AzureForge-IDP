@@ -453,3 +453,7 @@ terraform.rc
 .env
 .env.*
 !.env.example
+# Local Terraform variable files
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
