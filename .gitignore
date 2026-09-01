@@ -427,3 +427,29 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Terraform
+**/.terraform/**
+
+*.tfstate
+*.tfstate.*
+
+crash.log
+crash.*.log
+
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI configuration
+.terraformrc
+terraform.rc
+
+# Terraform plan files
+*.tfplan
+
+# Local environment/secrets
+.env
+.env.*
+!.env.example

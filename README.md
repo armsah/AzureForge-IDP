@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P1 complete — C# CLI and YAML service-spec validation.**
+**P2 complete — reusable Terraform foundation modules and composition tests.**
 
-Next implementation phase: **P2 — Terraform module library**.
+Next implementation phase: **P3 — Remote state and GitHub OIDC bootstrap**.
 
 ## Current Capabilities
 
@@ -20,9 +20,12 @@ AzureForge currently provides:
 - golden-path and catalog validation;
 - field-level validation errors;
 - deterministic CLI exit codes;
-- automated parser and validator tests.
+- automated parser and validator tests;
+- reusable Terraform foundation modules;
+- native Terraform module tests;
+- a tested Terraform composition example.
 
-Infrastructure provisioning is not implemented yet. Terraform modules are introduced in P2.
+Live application infrastructure provisioning is not implemented yet. P2 establishes the reusable Terraform foundation that later provisioning phases will compose.
 
 ## CLI
 
@@ -60,7 +63,7 @@ Build the solution:
 dotnet build
 ```
 
-Run the automated test suite:
+Run the automated .NET test suite:
 
 ```powershell
 dotnet test
@@ -74,6 +77,12 @@ P1 includes tests covering:
 - mandatory workload identity;
 - invalid replica configuration;
 - duplicate Service Bus queues.
+
+Run the P2 Terraform validation suite:
+
+```powershell
+.\scripts\test-terraform.ps1
+```
 
 ## P0 — Platform Definition
 
@@ -101,6 +110,34 @@ The implementation includes:
 - valid and invalid YAML test fixtures.
 
 See [`docs/p1-cli-validation.md`](docs/p1-cli-validation.md) for the P1 design and validation rules.
+
+## P2 — Terraform Module Library
+
+P2 introduces reusable Terraform modules for the AzureForge infrastructure foundation:
+
+- resource group with approved-region and mandatory-tag validation;
+- user-assigned managed identity for secretless workload authentication;
+- Log Analytics and workspace-based Application Insights;
+- native Terraform tests using mocked AzureRM providers;
+- a foundation example proving module-to-module composition without creating live Azure resources.
+
+See [`docs/p2-terraform-modules.md`](docs/p2-terraform-modules.md) and [`infra/modules/README.md`](infra/modules/README.md).
+
+Run the P2 validation suite:
+
+```powershell
+.\scripts\test-terraform.ps1
+```
+
+The current P2 test suite verifies:
+
+- resource-group validation and metadata rules;
+- managed identity configuration;
+- monitoring baseline configuration;
+- invalid retention handling;
+- module-to-module composition.
+
+P2 validation runs without Azure credentials and does not create live Azure resources.
 
 ## Architecture Direction
 
@@ -142,7 +179,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 
 - [x] P0 — Define platform customers, golden path, and guardrails
 - [x] P1 — Build C# CLI that validates YAML service specs
-- [ ] P2 — Create Terraform module library
+- [x] P2 — Create Terraform module library
 - [ ] P3 — Bootstrap remote state and GitHub OIDC
 - [ ] P4 — Build service-spec to Terraform variable generation
 - [ ] P5 — Generate pull request or artifact for provisioning
