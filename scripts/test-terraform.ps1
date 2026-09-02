@@ -4,6 +4,8 @@ $terraformRoots = @(
     "infra/modules/resource-group",
     "infra/modules/identity",
     "infra/modules/monitoring",
+    "infra/modules/service-bus",
+    "infra/modules/postgres",
     "infra/examples/foundation"
 )
 
@@ -26,4 +28,4 @@ foreach ($root in $terraformRoots) {
 }
 
 Write-Host ""
-Write-Host "P2 Terraform validation and tests passed."
+Write-Host "Terraform validation and tests passed."

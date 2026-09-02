@@ -14,7 +14,7 @@ variable "environment" {
 
   validation {
     condition     = var.environment == "dev"
-    error_message = "This P6 composition root supports the dev environment only."
+    error_message = "This composition root supports the dev environment only."
   }
 }
 
@@ -64,7 +64,7 @@ variable "compute_type" {
 
   validation {
     condition     = var.compute_type == "container-apps"
-    error_message = "P6 supports compute_type = container-apps only."
+    error_message = "The current golden path supports compute_type = container-apps only."
   }
 }
 
@@ -84,13 +84,36 @@ variable "max_replicas" {
 }
 
 variable "postgres_enabled" {
-  description = "Whether PostgreSQL is requested. Provisioning is deferred to P7."
+  description = "Whether the PostgreSQL capability is enabled."
   type        = bool
 }
 
+variable "postgres_administrator_password" {
+  description = "PostgreSQL administrator password supplied by the privileged provisioning workflow."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition = (
+      !var.postgres_enabled ||
+      try(length(var.postgres_administrator_password) >= 12, false)
+    )
+    error_message = "postgres_administrator_password must contain at least 12 characters when PostgreSQL is enabled."
+  }
+}
+
 variable "service_bus_queues" {
-  description = "Requested Service Bus queues. Provisioning is deferred to P7."
+  description = "Requested Service Bus queues."
   type        = list(string)
+
+  validation {
+    condition = alltrue([
+      for name in var.service_bus_queues :
+      length(trimspace(name)) >= 1
+    ])
+    error_message = "Service Bus queue names cannot be empty."
+  }
 }
 
 variable "public_ingress" {
@@ -104,7 +127,7 @@ variable "workload_identity" {
 
   validation {
     condition     = var.workload_identity
-    error_message = "P6 requires workload_identity = true."
+    error_message = "The current golden path requires workload_identity = true."
   }
 }
 

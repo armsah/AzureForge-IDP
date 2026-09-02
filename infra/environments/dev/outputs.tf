@@ -32,3 +32,22 @@ output "container_app_fqdn" {
   description = "Container App ingress FQDN."
   value       = module.container_app.fqdn
 }
+output "postgres_server_name" {
+  description = "Provisioned PostgreSQL Flexible Server name when the capability is enabled."
+  value       = try(module.postgres[0].server_name, null)
+}
+
+output "postgres_database_name" {
+  description = "Provisioned PostgreSQL application database name when the capability is enabled."
+  value       = try(module.postgres[0].database_name, null)
+}
+
+output "service_bus_namespace_name" {
+  description = "Provisioned Service Bus namespace name when the capability is enabled."
+  value       = try(module.service_bus[0].namespace_name, null)
+}
+
+output "service_bus_queue_names" {
+  description = "Provisioned Service Bus queue names."
+  value       = try(module.service_bus[0].queue_names, [])
+}

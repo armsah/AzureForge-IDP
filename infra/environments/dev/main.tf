@@ -44,3 +44,36 @@ module "container_app" {
 
   tags = var.tags
 }
+module "postgres" {
+  count  = var.postgres_enabled ? 1 : 0
+  source = "../../modules/postgres"
+
+  server_name         = local.postgres_server_name
+  database_name       = local.postgres_database_name
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+
+  postgres_version       = "16"
+  administrator_login    = "azureforgeadmin"
+  administrator_password = var.postgres_administrator_password
+  sku_name               = "B_Standard_B1ms"
+  storage_mb             = 32768
+  backup_retention_days  = 7
+
+  public_network_access_enabled = false
+
+  tags = var.tags
+}
+
+module "service_bus" {
+  count  = length(var.service_bus_queues) > 0 ? 1 : 0
+  source = "../../modules/service-bus"
+
+  namespace_name      = local.service_bus_namespace_name
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  sku                 = "Standard"
+  queue_names         = toset(var.service_bus_queues)
+
+  tags = var.tags
+}

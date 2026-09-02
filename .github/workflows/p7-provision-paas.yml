@@ -1,0 +1,157 @@
+name: P7 provision optional PaaS
+
+on:
+  workflow_dispatch:
+    inputs:
+      var_file:
+        description: "Reviewed provisioning artifact under provisioning/services/"
+        required: true
+        default: "provisioning/services/pricing-api/dev.tfvars.json"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: p7-provision-${{ inputs.var_file }}
+  cancel-in-progress: false
+
+jobs:
+  provision-paas:
+    runs-on: ubuntu-latest
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Supplied from GitHub Actions repository secrets.
+      # This value is never stored in the reviewed tfvars artifact.
+      TF_VAR_postgres_administrator_password: ${{ secrets.POSTGRES_ADMINISTRATOR_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate reviewed provisioning artifact path
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          var_file="${{ inputs.var_file }}"
+
+          if [[ "$var_file" != provisioning/services/*.tfvars.json &&
+                "$var_file" != provisioning/services/**/*.tfvars.json ]]; then
+            echo "error: var_file must be a reviewed provisioning/services/*.tfvars.json artifact"
+            exit 1
+          fi
+
+          if [[ ! -f "$var_file" ]]; then
+            echo "error: reviewed provisioning artifact not found: $var_file"
+            exit 1
+          fi
+
+      - name: Validate P7 desired state
+        id: desired_state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          var_file="${{ inputs.var_file }}"
+
+          service_name="$(jq -r '.service_name' "$var_file")"
+          environment="$(jq -r '.environment' "$var_file")"
+          compute_type="$(jq -r '.compute_type' "$var_file")"
+          resource_group_name="$(jq -r '.resource_group_name' "$var_file")"
+          postgres_enabled="$(jq -r '.postgres_enabled' "$var_file")"
+          service_bus_queue_count="$(jq '.service_bus_queues // [] | length' "$var_file")"
+
+          if [[ -z "$service_name" || "$service_name" == "null" ]]; then
+            echo "error: desired state does not contain service_name"
+            exit 1
+          fi
+
+          if [[ "$environment" != "dev" ]]; then
+            echo "error: P7 supports environment=dev only"
+            exit 1
+          fi
+
+          if [[ "$compute_type" != "container-apps" ]]; then
+            echo "error: P7 supports compute_type=container-apps only"
+            exit 1
+          fi
+
+          if [[ -z "$resource_group_name" || "$resource_group_name" == "null" ]]; then
+            echo "error: desired state does not contain resource_group_name"
+            exit 1
+          fi
+
+          if [[ "$postgres_enabled" != "true" && "$postgres_enabled" != "false" ]]; then
+            echo "error: postgres_enabled must be true or false"
+            exit 1
+          fi
+
+          if [[ "$postgres_enabled" == "true" &&
+                -z "${TF_VAR_postgres_administrator_password:-}" ]]; then
+            echo "error: POSTGRES_ADMINISTRATOR_PASSWORD secret is required when PostgreSQL is enabled"
+            exit 1
+          fi
+
+          if (( service_bus_queue_count > 0 )); then
+            service_bus_enabled="true"
+          else
+            service_bus_enabled="false"
+          fi
+
+          echo "service_name=$service_name" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$resource_group_name" >> "$GITHUB_OUTPUT"
+          echo "postgres_enabled=$postgres_enabled" >> "$GITHUB_OUTPUT"
+          echo "service_bus_enabled=$service_bus_enabled" >> "$GITHUB_OUTPUT"
+          echo "service_bus_queue_count=$service_bus_queue_count" >> "$GITHUB_OUTPUT"
+
+          echo "PostgreSQL enabled: $postgres_enabled"
+          echo "Service Bus queue count: $service_bus_queue_count"
+
+      - name: Azure login with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Show authenticated Azure context
+        run: |
+          az account show \
+            --query "{subscription:name, tenantId:tenantId, user:user.name}" \
+            -o json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Initialize existing remote Terraform state
+        working-directory: infra/environments/dev
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=p6-${{ steps.desired_state.outputs.service_name }}-${{ steps.desired_state.outputs.environment }}.tfstate" \
+            -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
+            -backend-config="client_id=${{ vars.AZURE_CLIENT_ID }}"
+
+      - name: Validate Terraform
+        working-directory: infra/environments/dev
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: infra/environments/dev
+        run: |
+          terraform plan \
+            -input=false \
+            -out=p7.tfplan \
+            -var-file="../../../${{ inputs.var_file }}"
