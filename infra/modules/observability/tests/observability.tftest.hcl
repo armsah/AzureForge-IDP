@@ -4,13 +4,13 @@ run "creates_standard_observability_baseline" {
   command = plan
 
   variables {
-    resource_group_name       = "rg-pricing-api-dev-weu"
-    location                  = "westeurope"
-    container_app_id          = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.App/containerApps/pricing-api"
-    container_app_name        = "pricing-api"
+    resource_group_name        = "rg-pricing-api-dev-weu"
+    location                   = "westeurope"
+    container_app_id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.App/containerApps/pricing-api"
+    container_app_name         = "pricing-api"
     log_analytics_workspace_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.OperationalInsights/workspaces/log-pricing-api-dev-weu"
-    alert_policy              = "standard"
-    workbook_name             = "pricing-api-dev-observability"
+    alert_policy               = "standard"
+    workbook_name              = "pricing-api-dev-observability"
 
     tags = {
       service     = "pricing-api"
@@ -45,19 +45,35 @@ run "creates_standard_observability_baseline" {
     condition     = azurerm_monitor_metric_alert.container_restarts[0].criteria[0].metric_name == "RestartCount"
     error_message = "The restart alert must monitor the RestartCount metric."
   }
+
+  assert {
+    condition = contains(
+      jsondecode(azurerm_application_insights_workbook.this.data_json).items[1].content.resourceIds,
+      var.log_analytics_workspace_id
+    )
+    error_message = "The workbook log query must explicitly target the service Log Analytics workspace."
+  }
+
+  assert {
+    condition = strcontains(
+      jsondecode(azurerm_application_insights_workbook.this.data_json).items[1].content.query,
+      "order by TimeGenerated asc"
+    )
+    error_message = "The workbook log-volume query must contain valid TimeGenerated ordering."
+  }
 }
 
 run "supports_observability_without_alerts" {
   command = plan
 
   variables {
-    resource_group_name       = "rg-pricing-api-dev-weu"
-    location                  = "westeurope"
-    container_app_id          = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.App/containerApps/pricing-api"
-    container_app_name        = "pricing-api"
+    resource_group_name        = "rg-pricing-api-dev-weu"
+    location                   = "westeurope"
+    container_app_id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.App/containerApps/pricing-api"
+    container_app_name         = "pricing-api"
     log_analytics_workspace_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.OperationalInsights/workspaces/log-pricing-api-dev-weu"
-    alert_policy              = "none"
-    workbook_name             = "pricing-api-dev-observability"
+    alert_policy               = "none"
+    workbook_name              = "pricing-api-dev-observability"
 
     tags = {
       service     = "pricing-api"
@@ -88,13 +104,13 @@ run "rejects_unsupported_alert_policy" {
   command = plan
 
   variables {
-    resource_group_name       = "rg-pricing-api-dev-weu"
-    location                  = "westeurope"
-    container_app_id          = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.App/containerApps/pricing-api"
-    container_app_name        = "pricing-api"
+    resource_group_name        = "rg-pricing-api-dev-weu"
+    location                   = "westeurope"
+    container_app_id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.App/containerApps/pricing-api"
+    container_app_name         = "pricing-api"
     log_analytics_workspace_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.OperationalInsights/workspaces/log-pricing-api-dev-weu"
-    alert_policy              = "custom"
-    workbook_name             = "pricing-api-dev-observability"
+    alert_policy               = "custom"
+    workbook_name              = "pricing-api-dev-observability"
 
     tags = {
       service     = "pricing-api"
@@ -112,13 +128,13 @@ run "rejects_invalid_container_app_id" {
   command = plan
 
   variables {
-    resource_group_name       = "rg-pricing-api-dev-weu"
-    location                  = "westeurope"
-    container_app_id          = "pricing-api"
-    container_app_name        = "pricing-api"
+    resource_group_name        = "rg-pricing-api-dev-weu"
+    location                   = "westeurope"
+    container_app_id           = "pricing-api"
+    container_app_name         = "pricing-api"
     log_analytics_workspace_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-pricing-api-dev-weu/providers/Microsoft.OperationalInsights/workspaces/log-pricing-api-dev-weu"
-    alert_policy              = "standard"
-    workbook_name             = "pricing-api-dev-observability"
+    alert_policy               = "standard"
+    workbook_name              = "pricing-api-dev-observability"
 
     tags = {
       service     = "pricing-api"
