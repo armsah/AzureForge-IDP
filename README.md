@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P5 complete - provisioning pull request generation with a human review boundary.**
+**P6 complete — Azure Container Apps golden path provisioned through reviewed desired state, Terraform remote state, and secretless GitHub OIDC.**
 
-Next implementation phase: **P6 - Provision Container Apps golden path**.
+Next implementation phase: **P7 — PostgreSQL and Service Bus provisioning**.
 
 ## Current Capabilities
 
@@ -30,8 +30,15 @@ AzureForge currently provides:
 - GitHub Actions provisioning-request generation;
 - deterministic provisioning branches and `.tfvars.json` artifacts;
 - pull-request-based human review before privileged infrastructure execution.
+- reusable Terraform modules and environment composition;
+- Azure Blob Storage remote Terraform state;
+- secretless GitHub-to-Azure authentication using OIDC;
+- live Azure Container Apps provisioning;
+- user-assigned workload identity;
+- Log Analytics and Application Insights baseline;
+- configurable Container Apps scaling and ingress.
 
-Live application infrastructure provisioning is not implemented yet. P5 now carries deterministic desired state into a reviewable GitHub pull request before later privileged provisioning phases consume it.
+P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, P6 consumes that approved artifact through the privileged GitHub OIDC Terraform workflow.
 
 ## CLI
 
@@ -230,6 +237,107 @@ See [`docs/p5-provisioning-pr.md`](docs/p5-provisioning-pr.md).
 
 The pull request therefore forms the human review boundary between developer intent and later privileged Azure provisioning.
 
+## P6 — Container Apps Golden Path
+
+P6 converts the human-reviewed desired state produced by P5 into live Azure infrastructure.
+
+The privileged provisioning workflow is:
+
+```text
+.github/workflows/p6-provision-container-app.yml
+```
+
+The deployment boundary is:
+
+```text
+service specification
+        ↓
+deterministic desired state
+        ↓
+provisioning pull request
+        ↓
+HUMAN REVIEW + MERGE
+        ↓
+GitHub Actions
+        ↓
+GitHub OIDC
+        ↓
+Terraform remote state
+        ↓
+Azure Container Apps
+```
+
+The initial `pricing-api` deployment provisions:
+
+- Azure Resource Group;
+- user-assigned managed identity;
+- Log Analytics workspace;
+- workspace-based Application Insights;
+- Azure Container Apps environment;
+- Azure Container App.
+
+The reusable Container Apps module is located at:
+
+```text
+infra/modules/container-app
+```
+
+The initial environment composition root is:
+
+```text
+infra/environments/dev
+```
+
+The privileged workflow uses the federated GitHub identity established in P3. No Azure client secret is stored in GitHub.
+
+Terraform state is stored in Azure Blob Storage using Microsoft Entra ID authentication.
+
+The P5 workflow retains repository and pull-request permissions only and does not authenticate to Azure. Privileged Terraform execution occurs only after the generated provisioning artifact has crossed the human review and merge boundary.
+
+For the portfolio environment, the Terraform GitHub identity has `Contributor` at subscription scope for workload provisioning and `Storage Blob Data Contributor` on the Terraform state container. A production implementation should reduce this deployment scope through a dedicated landing-zone scope and/or custom provisioning role.
+
+The initial `pricing-api` deployment was successfully provisioned in `westeurope` with:
+
+```text
+Resource Group:
+rg-pricing-api-dev-weu
+
+Managed Identity:
+id-pricing-api-dev
+
+Log Analytics:
+log-pricing-api-dev-weu
+
+Application Insights:
+appi-pricing-api-dev
+
+Container Apps Environment:
+cae-pricing-api-dev-weu
+
+Container App:
+pricing-api
+```
+
+The Container App was verified in Azure with:
+
+```text
+provisioningState: Succeeded
+```
+
+The initial service uses internal ingress:
+
+```text
+public_ingress = false
+```
+
+PostgreSQL and Service Bus remain deferred to P7.
+
+Detailed P6 design and evidence:
+
+```text
+docs/p6-container-app-golden-path.md
+```
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -274,7 +382,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P3 — Bootstrap remote state and GitHub OIDC
 - [x] P4 — Build service-spec to Terraform variable generation
 - [x] P5 — Generate pull request or artifact for provisioning
-- [ ] P6 — Provision Container Apps golden path
+- [x] P6 — Provision Container Apps golden path
 - [ ] P7 — Add optional Service Bus/PostgreSQL modules
 - [ ] P8 — Add monitoring and standard alerts
 - [ ] P9 — Add Azure Policy/tag/region checks
