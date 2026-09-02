@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P9 complete — AzureForge now enforces approved Azure regions, mandatory platform tags, and the required `managed-by=azureforge` ownership marker through deny-mode Azure Policy guardrails.**
+**P10 complete — AzureForge now performs scheduled Terraform drift detection through GitHub Actions using GitHub OIDC, remote state, `terraform plan -detailed-exitcode`, human-readable reports, retained artifacts, and visible workflow failure when infrastructure drift is detected.**
 
-Next implementation phase: **P10 — drift detection and scheduled Terraform plan**.
+Next implementation phase: **P11 — cost controls and environment TTL**.
 
 ## Current Capabilities
 
@@ -58,6 +58,11 @@ AzureForge currently provides:
 - GitHub OIDC policy deployment without long-lived Azure credentials;
 - Terraform governance tests for valid and unsafe configurations;
 - live Azure Policy negative tests proving unsafe resource creation is denied.
+- Scheduled Terraform drift detection against reviewed service desired state.
+- GitHub OIDC authentication with no long-lived Azure credentials.
+- Terraform `-detailed-exitcode` classification for clean state, drift, and execution errors.
+- GitHub Actions job summaries and retained Terraform drift-report artifacts.
+- Visible workflow failure when drift is detected, without automatic remediation.
 
 P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, and the P9 Azure Policy governance baseline. P9 adds Azure-side defense in depth by denying resources that violate the platform's approved-region, required-tag, or ownership-marker contract.
 
@@ -719,6 +724,76 @@ This confirms that the deployed P9 baseline is idempotent against the reviewed d
 
 P9 therefore proves that AzureForge enforces its region and tagging contract at multiple layers: developer-facing desired-state validation provides early feedback, Terraform validates the governance configuration, and Azure Policy provides the final Azure-side enforcement boundary that blocks unsafe resource creation.
 
+## P10 — Drift Detection and Scheduled Terraform Plan
+
+AzureForge now includes scheduled and manually triggered Terraform drift detection for the reviewed `pricing-api` development environment.
+
+The workflow is implemented in:
+
+```text
+.github/workflows/p10-drift-detection.yml
+```
+
+The workflow:
+
+- runs daily at `05:00 UTC` and can also be triggered manually;
+- authenticates to Azure using the existing GitHub OIDC federated identity;
+- initializes the existing remote Terraform state;
+- validates the Terraform configuration;
+- runs `terraform plan -detailed-exitcode` without applying changes;
+- classifies exit code `0` as clean infrastructure and exit code `2` as detected drift;
+- renders a human-readable Terraform drift report;
+- writes the result to the GitHub Actions job summary;
+- uploads `p10-drift-report-pricing-api-dev` with 14-day retention;
+- deliberately fails the workflow after evidence is retained when drift is detected.
+
+No automatic remediation is performed by the P10 workflow. Infrastructure changes remain review-driven.
+
+### P10 validation evidence
+
+Clean baseline:
+
+```text
+GitHub Actions run: 33691290273
+Result: success
+Terraform: No changes. Your infrastructure matches the configuration.
+Drift status: clean
+```
+
+A controlled out-of-band drift test added the temporary resource-group tag:
+
+```text
+p10drifttest=manual
+```
+
+The subsequent P10 run detected the difference:
+
+```text
+GitHub Actions run: 33691582923
+Result: failure by design
+Terraform plan: 0 to add, 1 to change, 0 to destroy
+Detected difference:
+- "p10drifttest" = "manual" -> null
+Drift status: drift
+```
+
+The workflow retained the Terraform report before deliberately failing with:
+
+```text
+error: infrastructure drift detected
+```
+
+After removing the temporary tag, a final verification returned the environment to a clean state:
+
+```text
+GitHub Actions run: 33692061685
+Result: success
+Terraform: No changes. Your infrastructure matches the configuration.
+Drift status: clean
+```
+
+P10 exit criterion satisfied: **Terraform drift is visible through the scheduled plan workflow, GitHub Actions status, job summary, and retained drift-report artifact.**
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -767,7 +842,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P7 — Add optional Service Bus/PostgreSQL modules
 - [x] P8 — Add monitoring and standard alerts
 - [x] P9 — Add Azure Policy/tag/region checks
-- [ ] P10 — Add drift detection and scheduled plan
+- [x] P10 — Add drift detection and scheduled plan
 - [ ] P11 — Add cost controls and environment TTL
 - [ ] P12 — Add optional AKS namespace template
 - [ ] P13 — Polish documentation and onboarding demo
