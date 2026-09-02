@@ -155,3 +155,61 @@ jobs:
             -input=false \
             -out=p7.tfplan \
             -var-file="../../../${{ inputs.var_file }}"
+
+      - name: Terraform apply
+        working-directory: infra/environments/dev
+        run: terraform apply -input=false -auto-approve p7.tfplan
+
+      - name: Capture PostgreSQL output
+        if: steps.desired_state.outputs.postgres_enabled == 'true'
+        id: postgres_output
+        working-directory: infra/environments/dev
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          postgres_server_name="$(terraform output -raw postgres_server_name)"
+          echo "server_name=$postgres_server_name" >> "$GITHUB_OUTPUT"
+
+      - name: Verify PostgreSQL Flexible Server
+        if: steps.desired_state.outputs.postgres_enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          az postgres flexible-server show \
+            --resource-group "${{ steps.desired_state.outputs.resource_group_name }}" \
+            --name "${{ steps.postgres_output.outputs.server_name }}" \
+            --query "{name:name, location:location, state:state, version:version}" \
+            -o json
+
+      - name: Capture Service Bus output
+        if: steps.desired_state.outputs.service_bus_enabled == 'true'
+        id: service_bus_output
+        working-directory: infra/environments/dev
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          namespace_name="$(terraform output -raw service_bus_namespace_name)"
+          echo "namespace_name=$namespace_name" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Service Bus namespace
+        if: steps.desired_state.outputs.service_bus_enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          az servicebus namespace show \
+            --resource-group "${{ steps.desired_state.outputs.resource_group_name }}" \
+            --name "${{ steps.service_bus_output.outputs.namespace_name }}" \
+            --query "{name:name, location:location, provisioningState:provisioningState}" \
+            -o json
+
+      - name: Show P7 capability outputs
+        working-directory: infra/environments/dev
+        run: |
+          terraform output postgres_server_name
+          terraform output postgres_database_name
+          terraform output service_bus_namespace_name
+          terraform output -json service_bus_queue_names
