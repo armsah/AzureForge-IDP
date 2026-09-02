@@ -6,6 +6,27 @@ module "resource_group" {
   tags     = var.tags
 }
 
+module "governance" {
+  source = "../../modules/governance"
+
+  resource_group_id = module.resource_group.id
+
+  allowed_locations = [
+    "westeurope",
+    "northeurope"
+  ]
+
+  required_tags = [
+    "service",
+    "team",
+    "environment",
+    "managed-by",
+    "criticality"
+  ]
+
+  managed_by_value = "azureforge"
+}
+
 module "identity" {
   source = "../../modules/identity"
 

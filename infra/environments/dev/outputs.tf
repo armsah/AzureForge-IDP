@@ -71,3 +71,18 @@ output "standard_alert_count" {
   description = "Number of AzureForge standard metric alerts composed for the service."
   value       = module.observability.standard_alert_count
 }
+
+output "governance_policy_assignment_count" {
+  description = "Number of AzureForge governance policy assignments applied to the service resource group."
+  value       = module.governance.policy_assignment_count
+}
+
+output "allowed_locations_policy_assignment_id" {
+  description = "AzureForge allowed-locations policy assignment resource ID."
+  value       = module.governance.allowed_locations_assignment_id
+}
+
+output "managed_by_value_policy_assignment_id" {
+  description = "AzureForge managed-by value policy assignment resource ID."
+  value       = module.governance.managed_by_value_assignment_id
+}
