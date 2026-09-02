@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P7 complete — optional Azure Database for PostgreSQL Flexible Server and Azure Service Bus capabilities are composable through reviewed desired state and the existing Terraform provisioning path.**
+**P8 complete — AzureForge services are observable by default through Azure Monitor, with a service workbook and standard Container Apps metric alerts provisioned from reviewed desired state.**
 
-Next implementation phase: **P8 — monitoring and standard alerts**.
+Next implementation phase: **P9 — Azure Policy, tag, and region checks**.
 
 ## Current Capabilities
 
@@ -43,8 +43,13 @@ AzureForge currently provides:
 - PostgreSQL administrator credentials supplied through GitHub Actions secrets rather than reviewed desired-state artifacts;
 - Service Bus local/SAS authentication disabled in favor of identity-based access;
 - composition tests covering PostgreSQL-only, Service-Bus-only, combined, and neither-capability configurations.
+- default Azure Monitor workbook provisioning for each service;
+- Container App log-volume, request, and restart visualizations;
+- standard HTTP 5xx and container-restart metric alerts;
+- desired-state-controlled alert policy using `standard` or `none`;
+- observability composition tests covering standard alerts and workbook-only configurations.
 
-P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, the privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline and optional P7 PaaS capabilities.
+P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, and the P8 observability baseline.
 
 ## CLI
 
@@ -451,6 +456,96 @@ Service Bus remains publicly reachable while local/SAS authentication is disable
 
 P7 therefore proves that AzureForge can compose optional PaaS capabilities from a single reviewed service specification while preserving the PR review boundary, federated GitHub identity, and shared remote Terraform state established in earlier phases.
 
+## P8 — Monitoring and Standard Alerts
+
+P8 makes a newly provisioned AzureForge service observable by default. The existing Log Analytics and Application Insights foundation is extended with an Azure Monitor workbook and standard Container Apps metric alerts.
+
+The reusable observability module is:
+
+```text
+infra/modules/observability
+```
+
+The service composition is:
+
+```text
+infra/environments/dev
+        |
+        +-- Container App
+        |
+        +-- monitoring
+        |     +-- Log Analytics
+        |     +-- Application Insights
+        |
+        +-- observability
+              +-- Azure Monitor workbook
+              +-- HTTP 5xx request alert
+              +-- container restart alert
+```
+
+The developer-facing desired state controls the alert baseline through:
+
+```text
+alerts = "standard"
+```
+
+`standard` creates the AzureForge standard metric alerts. `none` omits those alert rules while retaining the service workbook, so visibility remains available even when standard alerting is disabled.
+
+The standard alerts are:
+
+| Alert              | Metric         | Condition              | Window    | Evaluation | Severity |
+| ------------------ | -------------- | ---------------------- | --------- | ---------- | -------- |
+| HTTP 5xx           | `Requests`     | total 5xx requests > 0 | 5 minutes | 1 minute   | 2        |
+| Container restarts | `RestartCount` | total restarts > 2     | 5 minutes | 1 minute   | 2        |
+
+AzureForge does not alert merely because the service has zero replicas. The current golden path permits `min_replicas = 0`, making scale-to-zero a valid operating state rather than an incident condition.
+
+No Azure Monitor Action Group is created in P8 because the reviewed service desired state does not yet define a team notification destination. AzureForge therefore does not invent an email address, webhook, or other notification target.
+
+The service workbook deployed for the live `pricing-api` environment is:
+
+```text
+pricing-api-dev-observability
+```
+
+It provides:
+
+- Container App log volume from Log Analytics;
+- Container App request metrics;
+- Container restart-count metrics.
+
+The controlled deployment workflow is:
+
+```text
+.github/workflows/p8-provision-observability.yml
+```
+
+The workflow continues to use GitHub OIDC and the existing remote Terraform state. P8 introduces no long-lived Azure credential and extends the existing service Terraform object graph rather than creating separate infrastructure state.
+
+The initial live P8 provisioning plan reported:
+
+```text
+Plan: 3 to add, 0 to change, 0 to destroy.
+```
+
+It created one Azure Monitor workbook and two standard metric alerts. Post-deployment Azure verification confirmed both alerts were enabled at severity 2 and scoped to the `pricing-api` Container App.
+
+The final workbook-rendering correction was deployed in-place:
+
+```text
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+The resulting workbook successfully renders the log-volume, request, and restart sections. An empty log result is a valid state when the service has no recent log entries.
+
+A final plan-only verification reported no infrastructure changes, confirming that the deployed P8 observability baseline is idempotent against the reviewed desired state.
+
+Dashboard evidence:
+
+![P8 AzureForge observability workbook](docs/evidence/p8-observability-workbook.png)
+
+P8 therefore proves that a service provisioned through AzureForge is observable by default while preserving reviewed desired state, federated GitHub authentication, shared Terraform state, and the platform's existing privilege boundary.
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -497,7 +592,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P5 — Generate pull request or artifact for provisioning
 - [x] P6 — Provision Container Apps golden path
 - [x] P7 — Add optional Service Bus/PostgreSQL modules
-- [ ] P8 — Add monitoring and standard alerts
+- [x] P8 — Add monitoring and standard alerts
 - [ ] P9 — Add Azure Policy/tag/region checks
 - [ ] P10 — Add drift detection and scheduled plan
 - [ ] P11 — Add cost controls and environment TTL
