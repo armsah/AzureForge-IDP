@@ -36,6 +36,11 @@ run "creates_standard_namespace_and_queues" {
     condition     = azurerm_servicebus_queue.this["price-update"].name == "price-update"
     error_message = "The requested Service Bus queue must be provisioned."
   }
+
+    assert {
+    condition     = azurerm_servicebus_namespace.this.local_auth_enabled == false
+    error_message = "The Service Bus golden path must disable local authentication."
+  }
 }
 
 run "supports_empty_queue_set" {
