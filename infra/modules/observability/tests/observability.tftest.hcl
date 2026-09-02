@@ -61,6 +61,16 @@ run "creates_standard_observability_baseline" {
     )
     error_message = "The workbook log-volume query must contain valid TimeGenerated ordering."
   }
+
+  assert {
+    condition     = jsondecode(azurerm_application_insights_workbook.this.data_json).items[2].type == 10
+    error_message = "The Container App requests workbook panel must use the Azure Workbook metric item type."
+  }
+
+  assert {
+    condition     = jsondecode(azurerm_application_insights_workbook.this.data_json).items[3].type == 10
+    error_message = "The Container App restart workbook panel must use the Azure Workbook metric item type."
+  }
 }
 
 run "supports_observability_without_alerts" {

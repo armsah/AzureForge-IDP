@@ -38,7 +38,7 @@ resource "azurerm_application_insights_workbook" "this" {
         name = "log-volume"
       },
       {
-        type = 3
+        type = 10
         content = {
           version = "MetricsItem/2.0"
           size    = 0
@@ -61,7 +61,7 @@ resource "azurerm_application_insights_workbook" "this" {
         name = "requests"
       },
       {
-        type = 3
+        type = 10
         content = {
           version = "MetricsItem/2.0"
           size    = 0
