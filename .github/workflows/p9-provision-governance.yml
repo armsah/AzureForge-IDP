@@ -1,0 +1,177 @@
+name: P9 provision governance
+
+on:
+  workflow_dispatch:
+    inputs:
+      var_file:
+        description: "Reviewed provisioning artifact under provisioning/services/"
+        required: true
+        default: "provisioning/services/pricing-api/dev.tfvars.json"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: p9-provision-${{ inputs.var_file }}
+  cancel-in-progress: false
+
+jobs:
+  provision-governance:
+    runs-on: ubuntu-latest
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # PostgreSQL already belongs to the existing Terraform object graph.
+      # The secret is required to produce a complete plan but is never
+      # stored in the reviewed provisioning artifact.
+      TF_VAR_postgres_administrator_password: ${{ secrets.POSTGRES_ADMINISTRATOR_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate reviewed provisioning artifact path
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          var_file="${{ inputs.var_file }}"
+
+          if [[ "$var_file" != provisioning/services/*.tfvars.json &&
+                "$var_file" != provisioning/services/**/*.tfvars.json ]]; then
+            echo "error: var_file must be a reviewed provisioning/services/*.tfvars.json artifact"
+            exit 1
+          fi
+
+          if [[ ! -f "$var_file" ]]; then
+            echo "error: reviewed provisioning artifact not found: $var_file"
+            exit 1
+          fi
+
+      - name: Validate P9 desired state
+        id: desired_state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          var_file="${{ inputs.var_file }}"
+
+          service_name="$(jq -r '.service_name' "$var_file")"
+          environment="$(jq -r '.environment' "$var_file")"
+          compute_type="$(jq -r '.compute_type' "$var_file")"
+          postgres_enabled="$(jq -r '.postgres_enabled' "$var_file")"
+          alerts="$(jq -r '.alerts' "$var_file")"
+
+          if [[ -z "$service_name" || "$service_name" == "null" ]]; then
+            echo "error: desired state does not contain service_name"
+            exit 1
+          fi
+
+          if [[ "$environment" != "dev" ]]; then
+            echo "error: P9 supports environment=dev only"
+            exit 1
+          fi
+
+          if [[ "$compute_type" != "container-apps" ]]; then
+            echo "error: P9 supports compute_type=container-apps only"
+            exit 1
+          fi
+
+          if [[ "$alerts" != "standard" && "$alerts" != "none" ]]; then
+            echo "error: alerts must be standard or none"
+            exit 1
+          fi
+
+          if [[ "$postgres_enabled" == "true" &&
+                -z "${TF_VAR_postgres_administrator_password:-}" ]]; then
+            echo "error: POSTGRES_ADMINISTRATOR_PASSWORD secret is required when PostgreSQL is enabled"
+            exit 1
+          fi
+
+          echo "service_name=$service_name" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "alerts=$alerts" >> "$GITHUB_OUTPUT"
+
+          echo "Service: $service_name"
+          echo "Environment: $environment"
+          echo "Alert policy: $alerts"
+
+      - name: Azure login with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Show authenticated Azure context
+        run: |
+          az account show \
+            --query "{subscription:name, tenantId:tenantId, user:user.name}" \
+            -o json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: Initialize existing remote Terraform state
+        working-directory: infra/environments/dev
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=p6-${{ steps.desired_state.outputs.service_name }}-${{ steps.desired_state.outputs.environment }}.tfstate" \
+            -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
+            -backend-config="client_id=${{ vars.AZURE_CLIENT_ID }}"
+
+      - name: Validate Terraform
+        working-directory: infra/environments/dev
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: infra/environments/dev
+        run: |
+          terraform plan \
+            -input=false \
+            -detailed-exitcode \
+            -out=p9.tfplan \
+            -var-file="../../../${{ inputs.var_file }}" \
+            || exit_code=$?
+
+          exit_code="${exit_code:-0}"
+
+          if [[ "$exit_code" -eq 1 ]]; then
+            echo "error: Terraform plan failed"
+            exit 1
+          fi
+
+          if [[ "$exit_code" -eq 0 ]]; then
+            echo "Terraform reports no infrastructure changes."
+          fi
+
+          if [[ "$exit_code" -eq 2 ]]; then
+            echo "Terraform reports infrastructure changes."
+          fi
+
+      - name: Show Terraform plan
+        working-directory: infra/environments/dev
+        run: terraform show -no-color p9.tfplan
+
+      - name: Apply P9 governance
+        working-directory: infra/environments/dev
+        run: terraform apply -input=false -auto-approve p9.tfplan
+
+      - name: Show P9 governance outputs
+        working-directory: infra/environments/dev
+        run: |
+          terraform output governance_policy_assignment_count
+          terraform output allowed_locations_policy_assignment_id
+          terraform output managed_by_value_policy_assignment_id
