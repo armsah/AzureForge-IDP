@@ -1,0 +1,157 @@
+name: P6 provision Container App
+
+on:
+  workflow_dispatch:
+    inputs:
+      var_file:
+        description: "Reviewed provisioning artifact under provisioning/services/"
+        required: true
+        default: "provisioning/services/pricing-api/dev.tfvars.json"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: p6-provision-${{ inputs.var_file }}
+  cancel-in-progress: false
+
+jobs:
+  provision-container-app:
+    runs-on: ubuntu-latest
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate reviewed provisioning artifact path
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          var_file="${{ inputs.var_file }}"
+
+          if [[ "$var_file" != provisioning/services/*.tfvars.json &&
+                "$var_file" != provisioning/services/**/*.tfvars.json ]]; then
+            echo "error: var_file must be a reviewed provisioning/services/*.tfvars.json artifact"
+            exit 1
+          fi
+
+          if [[ ! -f "$var_file" ]]; then
+            echo "error: reviewed provisioning artifact not found: $var_file"
+            exit 1
+          fi
+
+      - name: Validate P6 desired state
+        id: desired_state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          var_file="${{ inputs.var_file }}"
+
+          service_name="$(jq -r '.service_name' "$var_file")"
+          environment="$(jq -r '.environment' "$var_file")"
+          compute_type="$(jq -r '.compute_type' "$var_file")"
+          resource_group_name="$(jq -r '.resource_group_name' "$var_file")"
+
+          if [[ -z "$service_name" || "$service_name" == "null" ]]; then
+            echo "error: desired state does not contain service_name"
+            exit 1
+          fi
+
+          if [[ "$environment" != "dev" ]]; then
+            echo "error: P6 supports environment=dev only"
+            exit 1
+          fi
+
+          if [[ "$compute_type" != "container-apps" ]]; then
+            echo "error: P6 supports compute_type=container-apps only"
+            exit 1
+          fi
+
+          if [[ -z "$resource_group_name" || "$resource_group_name" == "null" ]]; then
+            echo "error: desired state does not contain resource_group_name"
+            exit 1
+          fi
+
+          echo "service_name=$service_name" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$resource_group_name" >> "$GITHUB_OUTPUT"
+
+      - name: Azure login with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Show authenticated Azure context
+        run: |
+          az account show \
+            --query "{subscription:name, tenantId:tenantId, user:user.name}" \
+            -o json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Initialize remote Terraform state
+        working-directory: infra/environments/dev
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=p6-${{ steps.desired_state.outputs.service_name }}-${{ steps.desired_state.outputs.environment }}.tfstate" \
+            -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
+            -backend-config="client_id=${{ vars.AZURE_CLIENT_ID }}"
+
+      - name: Validate Terraform
+        working-directory: infra/environments/dev
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: infra/environments/dev
+        run: |
+          terraform plan \
+            -input=false \
+            -out=p6.tfplan \
+            -var-file="../../../${{ inputs.var_file }}"
+
+      - name: Terraform apply
+        working-directory: infra/environments/dev
+        run: terraform apply -input=false -auto-approve p6.tfplan
+
+      - name: Capture Terraform outputs
+        id: terraform_outputs
+        working-directory: infra/environments/dev
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          container_app_name="$(terraform output -raw container_app_name)"
+          environment_name="$(terraform output -raw container_app_environment_name)"
+
+          echo "container_app_name=$container_app_name" >> "$GITHUB_OUTPUT"
+          echo "environment_name=$environment_name" >> "$GITHUB_OUTPUT"
+
+      - name: Verify provisioned Container App
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          az resource show \
+            --resource-group "${{ steps.desired_state.outputs.resource_group_name }}" \
+            --name "${{ steps.terraform_outputs.outputs.container_app_name }}" \
+            --resource-type "Microsoft.App/containerApps" \
+            --query "{name:name, location:location, provisioningState:properties.provisioningState}" \
+            -o json
