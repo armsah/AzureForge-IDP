@@ -48,7 +48,7 @@ run "creates_standard_observability_baseline" {
 
   assert {
     condition = contains(
-      jsondecode(azurerm_application_insights_workbook.this.data_json).items[1].content.resourceIds,
+      jsondecode(azurerm_application_insights_workbook.this.data_json).items[1].content.crossComponentResources,
       var.log_analytics_workspace_id
     )
     error_message = "The workbook log query must explicitly target the service Log Analytics workspace."

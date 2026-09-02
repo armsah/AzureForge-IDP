@@ -31,7 +31,9 @@ resource "azurerm_application_insights_workbook" "this" {
           }
           queryType    = 0
           resourceType = "microsoft.operationalinsights/workspaces"
-          resourceIds  = [var.log_analytics_workspace_id]
+          crossComponentResources = [
+            var.log_analytics_workspace_id
+          ]
         }
         name = "log-volume"
       },
