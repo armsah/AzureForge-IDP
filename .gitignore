@@ -461,3 +461,6 @@ terraform.rc
 
 # P4 deterministic golden-test fixtures
 !tests/AzureForge.Cli.Tests/Fixtures/Golden/*.tfvars.json
+
+# P5 reviewable provisioning desired-state artifacts
+!provisioning/services/**/*.tfvars.json
