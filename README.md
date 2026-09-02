@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P8 complete — AzureForge services are observable by default through Azure Monitor, with a service workbook and standard Container Apps metric alerts provisioned from reviewed desired state.**
+**P9 complete — AzureForge now enforces approved Azure regions, mandatory platform tags, and the required `managed-by=azureforge` ownership marker through deny-mode Azure Policy guardrails.**
 
-Next implementation phase: **P9 — Azure Policy, tag, and region checks**.
+Next implementation phase: **P10 — drift detection and scheduled Terraform plan**.
 
 ## Current Capabilities
 
@@ -48,8 +48,18 @@ AzureForge currently provides:
 - standard HTTP 5xx and container-restart metric alerts;
 - desired-state-controlled alert policy using `standard` or `none`;
 - observability composition tests covering standard alerts and workbook-only configurations.
+- reusable Terraform governance module for Azure Policy;
+- deny-mode enforcement of approved Azure regions;
+- approved deployment regions restricted to `westeurope` and `northeurope`;
+- mandatory `service`, `team`, `environment`, `managed-by`, and `criticality` resource tags;
+- enforced `managed-by=azureforge` ownership marker;
+- resource-group-scoped Azure Policy assignments;
+- custom Azure Policy definitions managed through reviewed Terraform workflows;
+- GitHub OIDC policy deployment without long-lived Azure credentials;
+- Terraform governance tests for valid and unsafe configurations;
+- live Azure Policy negative tests proving unsafe resource creation is denied.
 
-P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, and the P8 observability baseline.
+P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, and the P9 Azure Policy governance baseline. P9 adds Azure-side defense in depth by denying resources that violate the platform's approved-region, required-tag, or ownership-marker contract.
 
 ## CLI
 
@@ -546,6 +556,169 @@ Dashboard evidence:
 
 P8 therefore proves that a service provisioned through AzureForge is observable by default while preserving reviewed desired state, federated GitHub authentication, shared Terraform state, and the platform's existing privilege boundary.
 
+## P9 — Azure Policy, Tag, and Region Guardrails
+
+P9 adds Azure-side governance enforcement to the AzureForge golden path. Earlier validation stages reject unsafe desired state before Terraform execution; P9 adds Azure Policy as a defense-in-depth control so noncompliant resource creation is also denied by Azure Resource Manager.
+
+The reusable governance module is:
+
+```text
+infra/modules/governance
+```
+
+The service governance composition is:
+
+```text
+infra/environments/dev
+        |
+        +-- existing service infrastructure
+        |
+        +-- governance
+              |
+              +-- allowed-locations policy
+              |      allowed: westeurope, northeurope
+              |      effect: deny
+              |
+              +-- required-tag policies
+              |      service
+              |      team
+              |      environment
+              |      managed-by
+              |      criticality
+              |      effect: deny
+              |
+              +-- managed-by-value policy
+              |      required: azureforge
+              |      effect: deny
+              |
+              +-- resource-group policy assignments
+                     |
+                     v
+              rg-pricing-api-dev-weu
+```
+
+P9 creates seven custom Azure Policy definitions:
+
+- one allowed-locations policy;
+- five required-tag policies;
+- one `managed-by` value policy.
+
+The approved Azure regions are:
+
+```text
+westeurope
+northeurope
+```
+
+Resources governed by the AzureForge baseline must contain all five standard tags:
+
+```text
+service
+team
+environment
+managed-by
+criticality
+```
+
+In addition to requiring the `managed-by` tag, AzureForge requires its value to be exactly:
+
+```text
+azureforge
+```
+
+All seven policies use the `deny` effect. The live P9 implementation assigns them to the `pricing-api` service resource group rather than applying a new governance baseline subscription-wide:
+
+```text
+rg-pricing-api-dev-weu
+```
+
+This produces seven resource-group policy assignments: one for allowed locations, five for required tags, and one for the required `managed-by` value.
+
+The Terraform governance module validates the same contract before Azure deployment. Module tests verify the valid governance baseline and reject unsafe configuration such as an unapproved `eastus` location. The governance module test suite completed with:
+
+```text
+Success! 5 passed, 0 failed.
+```
+
+The complete `dev` environment test suite, including P9 composition tests, completed with:
+
+```text
+Success! 9 passed, 0 failed.
+```
+
+The plan-only governance workflow is:
+
+```text
+.github/workflows/p9-plan-governance.yml
+```
+
+The controlled deployment workflow is:
+
+```text
+.github/workflows/p9-provision-governance.yml
+```
+
+Both workflows continue to use GitHub OIDC and the existing shared remote Terraform state. No long-lived Azure client secret was introduced.
+
+Custom Azure Policy definitions are subscription-level objects. The existing GitHub Terraform managed identity therefore has `Resource Policy Contributor` at subscription scope so the reviewed Terraform workflow can manage those definitions. Policy assignments remain limited to the service resource group. The identity is not granted `Owner` or `User Access Administrator` for P9.
+
+The initial remote Terraform plan reported:
+
+```text
+Plan: 14 to add, 0 to change, 0 to destroy.
+```
+
+The controlled P9 deployment then completed with:
+
+```text
+Apply complete! Resources: 14 added, 0 changed, 0 destroyed.
+```
+
+The deployment created seven custom policy definitions and seven enforced resource-group policy assignments. Independent Azure CLI verification confirmed all seven assignments were present in enforcement mode `Default` and all seven AzureForge definitions were custom `Indexed` policies.
+
+Live negative tests then exercised the Azure-side enforcement boundary directly.
+
+A storage-account request using `eastus` while supplying all required AzureForge tags was rejected with:
+
+```text
+RequestDisallowedByPolicy
+```
+
+The violation identified the `azforge-allowed-locations` assignment and showed that only `northeurope` and `westeurope` were allowed.
+
+A second request used the approved `westeurope` region but omitted the `criticality` tag. Azure rejected it with `RequestDisallowedByPolicy` under:
+
+```text
+azforge-tag-criticality
+```
+
+A third request supplied every required tag but deliberately set:
+
+```text
+managed-by=manual
+```
+
+Azure rejected it under:
+
+```text
+azforge-managed-by-value
+```
+
+with the required value reported as `azureforge`.
+
+Verification of the region and `managed-by` negative tests confirmed that those rejected resources were not created. The missing-`criticality` request was rejected by Azure Policy before resource creation.
+
+Finally, GitHub Actions run `33683494514` refreshed the deployed service and governance resources against the shared Terraform state and reported:
+
+```text
+No changes. Your infrastructure matches the configuration.
+Terraform reports no infrastructure changes.
+```
+
+This confirms that the deployed P9 baseline is idempotent against the reviewed desired state.
+
+P9 therefore proves that AzureForge enforces its region and tagging contract at multiple layers: developer-facing desired-state validation provides early feedback, Terraform validates the governance configuration, and Azure Policy provides the final Azure-side enforcement boundary that blocks unsafe resource creation.
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -593,7 +766,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P6 — Provision Container Apps golden path
 - [x] P7 — Add optional Service Bus/PostgreSQL modules
 - [x] P8 — Add monitoring and standard alerts
-- [ ] P9 — Add Azure Policy/tag/region checks
+- [x] P9 — Add Azure Policy/tag/region checks
 - [ ] P10 — Add drift detection and scheduled plan
 - [ ] P11 — Add cost controls and environment TTL
 - [ ] P12 — Add optional AKS namespace template
