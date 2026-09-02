@@ -51,3 +51,23 @@ output "service_bus_queue_names" {
   description = "Provisioned Service Bus queue names."
   value       = try(module.service_bus[0].queue_names, [])
 }
+
+output "observability_workbook_id" {
+  description = "Azure Monitor workbook resource ID for the service."
+  value       = module.observability.workbook_id
+}
+
+output "observability_workbook_display_name" {
+  description = "Azure Monitor workbook display name for the service."
+  value       = module.observability.workbook_display_name
+}
+
+output "standard_alert_ids" {
+  description = "Azure Monitor metric alert resource IDs created for the service."
+  value       = module.observability.standard_alert_ids
+}
+
+output "standard_alert_count" {
+  description = "Number of AzureForge standard metric alerts composed for the service."
+  value       = module.observability.standard_alert_count
+}

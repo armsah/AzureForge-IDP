@@ -137,8 +137,13 @@ variable "application_insights_enabled" {
 }
 
 variable "alerts" {
-  description = "Requested alert policy. Alert implementation is deferred to P8."
+  description = "AzureForge alert policy applied to the service."
   type        = string
+
+  validation {
+    condition     = contains(["none", "standard"], var.alerts)
+    error_message = "alerts must be either none or standard."
+  }
 }
 
 variable "monthly_budget_eur" {

@@ -44,6 +44,21 @@ module "container_app" {
 
   tags = var.tags
 }
+
+module "observability" {
+  source = "../../modules/observability"
+
+  resource_group_name        = module.resource_group.name
+  location                   = module.resource_group.location
+  container_app_id           = module.container_app.container_app_id
+  container_app_name         = module.container_app.container_app_name
+  log_analytics_workspace_id = module.monitoring.log_analytics_workspace_id
+  alert_policy               = var.alerts
+  workbook_name              = "${var.service_name}-${var.environment}-observability"
+
+  tags = var.tags
+}
+
 module "postgres" {
   count  = var.postgres_enabled ? 1 : 0
   source = "../../modules/postgres"
