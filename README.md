@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P6 complete — Azure Container Apps golden path provisioned through reviewed desired state, Terraform remote state, and secretless GitHub OIDC.**
+**P7 complete — optional Azure Database for PostgreSQL Flexible Server and Azure Service Bus capabilities are composable through reviewed desired state and the existing Terraform provisioning path.**
 
-Next implementation phase: **P7 — PostgreSQL and Service Bus provisioning**.
+Next implementation phase: **P8 — monitoring and standard alerts**.
 
 ## Current Capabilities
 
@@ -36,9 +36,15 @@ AzureForge currently provides:
 - live Azure Container Apps provisioning;
 - user-assigned workload identity;
 - Log Analytics and Application Insights baseline;
-- configurable Container Apps scaling and ingress.
+- configurable Container Apps scaling and ingress;
+- optional Azure Database for PostgreSQL Flexible Server provisioning;
+- optional Azure Service Bus namespace and queue provisioning;
+- deterministic globally unique PaaS resource naming;
+- PostgreSQL administrator credentials supplied through GitHub Actions secrets rather than reviewed desired-state artifacts;
+- Service Bus local/SAS authentication disabled in favor of identity-based access;
+- composition tests covering PostgreSQL-only, Service-Bus-only, combined, and neither-capability configurations.
 
-P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, P6 consumes that approved artifact through the privileged GitHub OIDC Terraform workflow.
+P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, the privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline and optional P7 PaaS capabilities.
 
 ## CLI
 
@@ -330,13 +336,120 @@ The initial service uses internal ingress:
 public_ingress = false
 ```
 
-PostgreSQL and Service Bus remain deferred to P7.
+PostgreSQL and Service Bus are added as optional composable capabilities in P7.
 
 Detailed P6 design and evidence:
 
 ```text
 docs/p6-container-app-golden-path.md
 ```
+
+## P7 — Optional PostgreSQL and Service Bus
+
+P7 extends the P6 environment composition with optional Azure PaaS capabilities driven by the reviewed service desired state.
+
+The implementation adds reusable Terraform modules for:
+
+```text
+infra/modules/postgres
+infra/modules/service-bus
+```
+
+The existing environment composition root remains:
+
+```text
+infra/environments/dev
+```
+
+The composition is capability-driven:
+
+```text
+reviewed service desired state
+        |
+        v
+infra/environments/dev
+        |
+        +-- resource group
+        +-- workload identity
+        +-- monitoring
+        +-- Container Apps
+        +-- PostgreSQL   [optional]
+        +-- Service Bus  [optional]
+```
+
+PostgreSQL provisioning is controlled by:
+
+```text
+postgres_enabled
+```
+
+Service Bus provisioning is controlled by the requested queue collection:
+
+```text
+service_bus_queues
+```
+
+Terraform composition tests prove that the environment supports:
+
+- PostgreSQL and Service Bus together;
+- PostgreSQL without Service Bus;
+- Service Bus without PostgreSQL;
+- neither optional PaaS capability.
+
+The P7 provisioning workflow is:
+
+```text
+.github/workflows/p7-provision-paas.yml
+```
+
+It uses the same GitHub OIDC identity and existing remote Terraform state as the P6 deployment, extending the existing service infrastructure rather than creating a separate Terraform object graph.
+
+Before live deployment, the reviewed Terraform plan reported:
+
+```text
+Plan: 4 to add, 0 to change, 0 to destroy.
+```
+
+The live `pricing-api` deployment added:
+
+```text
+PostgreSQL Flexible Server:
+psql-pricing-api-dev-weu-35531c
+
+PostgreSQL Database:
+pricing_api
+
+Service Bus Namespace:
+sb-pricing-api-dev-weu-35531c
+
+Service Bus Queue:
+price-update
+```
+
+Post-deployment Azure verification confirmed:
+
+```text
+PostgreSQL:
+state: Ready
+version: 16
+public network access: Disabled
+
+Service Bus:
+status: Active
+local authentication: Disabled
+
+Queue:
+status: Active
+maxDeliveryCount: 10
+```
+
+The PostgreSQL administrator password is not stored in the reviewed `.tfvars.json` artifact. The privileged GitHub Actions workflow supplies it through the `POSTGRES_ADMINISTRATOR_PASSWORD` repository secret as a Terraform input.
+
+For this portfolio phase, PostgreSQL is provisioned with public network access disabled, but private application connectivity is not yet implemented.
+
+Service Bus remains publicly reachable while local/SAS authentication is disabled. Private networking, workload RBAC assignments, and application-level connectivity are separate hardening and integration concerns rather than part of the P7 composability exit criterion.
+
+P7 therefore proves that AzureForge can compose optional PaaS capabilities from a single reviewed service specification while preserving the PR review boundary, federated GitHub identity, and shared remote Terraform state established in earlier phases.
 
 ## Architecture Direction
 
@@ -383,7 +496,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P4 — Build service-spec to Terraform variable generation
 - [x] P5 — Generate pull request or artifact for provisioning
 - [x] P6 — Provision Container Apps golden path
-- [ ] P7 — Add optional Service Bus/PostgreSQL modules
+- [x] P7 — Add optional Service Bus/PostgreSQL modules
 - [ ] P8 — Add monitoring and standard alerts
 - [ ] P9 — Add Azure Policy/tag/region checks
 - [ ] P10 — Add drift detection and scheduled plan
