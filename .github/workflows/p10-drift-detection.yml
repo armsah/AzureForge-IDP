@@ -1,0 +1,218 @@
+name: P10 drift detection
+
+on:
+  workflow_dispatch:
+    inputs:
+      var_file:
+        description: "Reviewed provisioning artifact under provisioning/services/"
+        required: true
+        default: "provisioning/services/pricing-api/dev.tfvars.json"
+        type: string
+
+  schedule:
+    - cron: "0 5 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: p10-drift-pricing-api-dev
+  cancel-in-progress: false
+
+jobs:
+  drift-detection:
+    runs-on: ubuntu-latest
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      TF_VAR_postgres_administrator_password: ${{ secrets.POSTGRES_ADMINISTRATOR_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve reviewed provisioning artifact
+        id: desired_state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            var_file="${{ inputs.var_file }}"
+          else
+            var_file="provisioning/services/pricing-api/dev.tfvars.json"
+          fi
+
+          if [[ "$var_file" != provisioning/services/*.tfvars.json &&
+                "$var_file" != provisioning/services/**/*.tfvars.json ]]; then
+            echo "error: var_file must be a reviewed provisioning/services/*.tfvars.json artifact"
+            exit 1
+          fi
+
+          if [[ ! -f "$var_file" ]]; then
+            echo "error: reviewed provisioning artifact not found: $var_file"
+            exit 1
+          fi
+
+          service_name="$(jq -r '.service_name' "$var_file")"
+          environment="$(jq -r '.environment' "$var_file")"
+          compute_type="$(jq -r '.compute_type' "$var_file")"
+          postgres_enabled="$(jq -r '.postgres_enabled' "$var_file")"
+          alerts="$(jq -r '.alerts' "$var_file")"
+
+          if [[ -z "$service_name" || "$service_name" == "null" ]]; then
+            echo "error: desired state does not contain service_name"
+            exit 1
+          fi
+
+          if [[ "$environment" != "dev" ]]; then
+            echo "error: P10 supports environment=dev only"
+            exit 1
+          fi
+
+          if [[ "$compute_type" != "container-apps" ]]; then
+            echo "error: P10 supports compute_type=container-apps only"
+            exit 1
+          fi
+
+          if [[ "$alerts" != "standard" && "$alerts" != "none" ]]; then
+            echo "error: alerts must be standard or none"
+            exit 1
+          fi
+
+          if [[ "$postgres_enabled" == "true" &&
+                -z "${TF_VAR_postgres_administrator_password:-}" ]]; then
+            echo "error: POSTGRES_ADMINISTRATOR_PASSWORD secret is required when PostgreSQL is enabled"
+            exit 1
+          fi
+
+          echo "var_file=$var_file" >> "$GITHUB_OUTPUT"
+          echo "service_name=$service_name" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+
+          echo "Reviewed artifact: $var_file"
+          echo "Service: $service_name"
+          echo "Environment: $environment"
+
+      - name: Azure login with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Show authenticated Azure context
+        run: |
+          az account show \
+            --query "{subscription:name, tenantId:tenantId, user:user.name}" \
+            -o json
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: Initialize existing remote Terraform state
+        working-directory: infra/environments/dev
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=p6-${{ steps.desired_state.outputs.service_name }}-${{ steps.desired_state.outputs.environment }}.tfstate" \
+            -backend-config="tenant_id=${{ vars.AZURE_TENANT_ID }}" \
+            -backend-config="client_id=${{ vars.AZURE_CLIENT_ID }}"
+
+      - name: Validate Terraform
+        working-directory: infra/environments/dev
+        run: terraform validate
+
+      - name: Detect Terraform drift
+        id: drift
+        working-directory: infra/environments/dev
+        shell: bash
+        run: |
+          set +e
+
+          terraform plan \
+            -input=false \
+            -detailed-exitcode \
+            -out=p10.tfplan \
+            -var-file="../../../${{ steps.desired_state.outputs.var_file }}"
+
+          exit_code=$?
+
+          set -e
+
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+          case "$exit_code" in
+            0)
+              echo "status=clean" >> "$GITHUB_OUTPUT"
+              echo "Terraform reports no infrastructure drift."
+              ;;
+            2)
+              echo "status=drift" >> "$GITHUB_OUTPUT"
+              echo "Terraform reports infrastructure drift."
+              ;;
+            *)
+              echo "status=error" >> "$GITHUB_OUTPUT"
+              echo "error: Terraform plan failed with exit code $exit_code"
+              exit "$exit_code"
+              ;;
+          esac
+
+      - name: Render Terraform drift report
+        if: always() && (steps.drift.outputs.status == 'clean' || steps.drift.outputs.status == 'drift')
+        working-directory: infra/environments/dev
+        shell: bash
+        run: |
+          terraform show -no-color p10.tfplan > p10-drift-report.txt
+          cat p10-drift-report.txt
+
+      - name: Write drift summary
+        if: always() && steps.drift.outputs.status != ''
+        shell: bash
+        run: |
+          {
+            echo "## AzureForge P10 drift report"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Service | \`${{ steps.desired_state.outputs.service_name }}\` |"
+            echo "| Environment | \`${{ steps.desired_state.outputs.environment }}\` |"
+            echo "| Reviewed artifact | \`${{ steps.desired_state.outputs.var_file }}\` |"
+            echo "| Terraform detailed exit code | \`${{ steps.drift.outputs.exit_code }}\` |"
+            echo "| Drift status | **${{ steps.drift.outputs.status }}** |"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${{ steps.drift.outputs.status }}" == "clean" ]]; then
+            echo "No infrastructure drift was detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "${{ steps.drift.outputs.status }}" == "drift" ]]; then
+            echo "Terraform detected differences between reviewed desired state and live Azure infrastructure." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Terraform drift report
+        if: always() && (steps.drift.outputs.status == 'clean' || steps.drift.outputs.status == 'drift')
+        uses: actions/upload-artifact@v4
+        with:
+          name: p10-drift-report-${{ steps.desired_state.outputs.service_name }}-${{ steps.desired_state.outputs.environment }}
+          path: infra/environments/dev/p10-drift-report.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Fail workflow when drift is detected
+        if: steps.drift.outputs.status == 'drift'
+        shell: bash
+        run: |
+          echo "error: infrastructure drift detected"
+          exit 2
