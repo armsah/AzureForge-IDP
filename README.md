@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P4 complete - deterministic service-spec to Terraform variable generation.**
+**P5 complete - provisioning pull request generation with a human review boundary.**
 
-Next implementation phase: **P5 - Provisioning pull request or artifact generation**.
+Next implementation phase: **P6 - Provision Container Apps golden path**.
 
 ## Current Capabilities
 
@@ -27,8 +27,11 @@ AzureForge currently provides:
 - deterministic service-spec to Terraform desired-state generation;
 - canonical `.tfvars.json` serialization;
 - golden-file testing for generated Terraform input.
+- GitHub Actions provisioning-request generation;
+- deterministic provisioning branches and `.tfvars.json` artifacts;
+- pull-request-based human review before privileged infrastructure execution.
 
-Live application infrastructure provisioning is not implemented yet. P4 now provides the deterministic desired-state boundary that later provisioning phases will consume.
+Live application infrastructure provisioning is not implemented yet. P5 now carries deterministic desired state into a reviewable GitHub pull request before later privileged provisioning phases consume it.
 
 ## CLI
 
@@ -184,6 +187,49 @@ See [`docs/p4-terraform-variable-generation.md`](docs/p4-terraform-variable-gene
 
 P4 performs no Azure API calls and creates no infrastructure. The generated file is the deterministic desired-state input consumed by later provisioning phases.
 
+## P5 - Provisioning Pull Request
+
+P5 turns deterministic AzureForge desired state into a reviewable provisioning pull request.
+
+The GitHub Actions workflow:
+
+- accepts an AzureForge service specification through `workflow_dispatch`;
+- builds and tests the AzureForge CLI;
+- invokes the P4 desired-state generator;
+- writes the result under `provisioning/services/<service>/<environment>.tfvars.json`;
+- uses a deterministic provisioning branch per service and environment;
+- creates or updates a GitHub pull request for human review.
+
+For the representative `pricing-api` service:
+
+```text
+Source:
+examples/pricing-api.yaml
+
+Artifact:
+provisioning/services/pricing-api/dev.tfvars.json
+
+Branch:
+azureforge/provision/pricing-api-dev
+
+Pull request:
+provision: pricing-api dev
+```
+
+The P5 workflow has repository permissions for branch and pull-request creation only:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+```
+
+It does not request GitHub OIDC tokens, authenticate to Azure, execute Terraform, approve its own pull requests, or merge them.
+
+See [`docs/p5-provisioning-pr.md`](docs/p5-provisioning-pr.md).
+
+The pull request therefore forms the human review boundary between developer intent and later privileged Azure provisioning.
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -227,7 +273,7 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P2 — Create Terraform module library
 - [x] P3 — Bootstrap remote state and GitHub OIDC
 - [x] P4 — Build service-spec to Terraform variable generation
-- [ ] P5 — Generate pull request or artifact for provisioning
+- [x] P5 — Generate pull request or artifact for provisioning
 - [ ] P6 — Provision Container Apps golden path
 - [ ] P7 — Add optional Service Bus/PostgreSQL modules
 - [ ] P8 — Add monitoring and standard alerts
