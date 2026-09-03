@@ -50,6 +50,8 @@ public sealed class TerraformDesiredStateGenerator
             Alerts: spec.Observability.Alerts,
             MonthlyBudgetEur: spec.Cost.MonthlyBudgetEur,
             EnvironmentTtlDays: spec.Lifecycle.TtlDays,
+            AksNamespaceEnabled: spec.Kubernetes.Namespace.Enabled,
+            AksNamespaceName: spec.Kubernetes.Namespace.Enabled ? serviceName : null,
             Tags: tags);
     }
 }

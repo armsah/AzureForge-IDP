@@ -27,6 +27,10 @@ observability:
   appInsights: true
   alerts: standard
 
+kubernetes:
+  namespace:
+    enabled: false
+
 cost:
   monthlyBudgetEur: 80
 

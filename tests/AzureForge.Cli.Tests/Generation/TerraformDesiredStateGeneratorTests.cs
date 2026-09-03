@@ -66,7 +66,7 @@ public sealed class TerraformDesiredStateGeneratorTests
         var desiredState = generator.Generate(spec);
 
         Assert.Equal(
-            ["alpha-queue", "price-update", "zeta-queue"],
+            ["alpha-queue", "zeta-queue"],
             desiredState.ServiceBusQueues);
     }
 

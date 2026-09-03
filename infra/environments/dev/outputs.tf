@@ -86,3 +86,18 @@ output "managed_by_value_policy_assignment_id" {
   description = "AzureForge managed-by value policy assignment resource ID."
   value       = module.governance.managed_by_value_assignment_id
 }
+
+output "aks_namespace_name" {
+  description = "Provisioned Kubernetes namespace when the shared AKS capability is enabled."
+  value       = try(module.aks_namespace[0].namespace_name, null)
+}
+
+output "aks_namespace_resource_quota_name" {
+  description = "ResourceQuota applied to the AzureForge namespace."
+  value       = try(module.aks_namespace[0].resource_quota_name, null)
+}
+
+output "aks_namespace_limit_range_name" {
+  description = "LimitRange applied to the AzureForge namespace."
+  value       = try(module.aks_namespace[0].limit_range_name, null)
+}

@@ -22,4 +22,6 @@ public sealed record TerraformDesiredState(
     string Alerts,
     decimal MonthlyBudgetEur,
     int EnvironmentTtlDays,
+    bool AksNamespaceEnabled,
+    string? AksNamespaceName,
     IReadOnlyDictionary<string, string> Tags);

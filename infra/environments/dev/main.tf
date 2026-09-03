@@ -121,3 +121,16 @@ module "service_bus" {
 
   tags = var.tags
 }
+
+module "aks_namespace" {
+  count  = var.aks_namespace_enabled ? 1 : 0
+  source = "../../modules/aks-namespace"
+
+  namespace_name = var.aks_namespace_name
+
+  labels = {
+    "azureforge.io/service"     = var.service_name
+    "azureforge.io/team"        = var.team
+    "azureforge.io/environment" = var.environment
+  }
+}

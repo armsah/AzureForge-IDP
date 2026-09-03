@@ -6,9 +6,11 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P11 complete — AzureForge now provides per-environment Azure cost budgets and bounded lifecycle configuration for disposable service environments, with validation across the developer-facing service specification and Terraform composition.**
+**P12 complete — AzureForge now provides an optional governed Kubernetes namespace capability for reuse of an externally managed/shared AKS cluster, without taking ownership of the cluster lifecycle.**
 
-Next implementation phase: **P12 — optional AKS namespace template**.
+AzureForge can translate developer namespace intent into deterministic Terraform desired state and compose a Kubernetes `Namespace`, `ResourceQuota`, and `LimitRange`. The capability is validated with mocked Terraform tests because no live shared AKS cluster was available during P12.
+
+Next implementation phase: **P13 — documentation polish and onboarding demo**.
 
 ## Current Capabilities
 
@@ -69,8 +71,15 @@ AzureForge currently provides:
 - environment TTL validation restricted to 1–90 days;
 - reusable Terraform cost-control module;
 - Terraform composition tests covering valid cost controls and invalid budget/TTL configuration.
+- optional governed Kubernetes namespace capability;
+- reuse of an externally managed/shared AKS cluster rather than provisioning another cluster;
+- deterministic AKS namespace naming derived from `service.name`;
+- namespace-level `ResourceQuota` and `LimitRange` governance;
+- AzureForge service, team, environment, and ownership labels on managed namespaces;
+- Kubernetes authentication supplied by the trusted execution environment through kubeconfig rather than generated service desired state;
+- mocked Terraform module and composition tests for the AKS namespace capability.
 
-P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, the P9 Azure Policy governance baseline, and the P11 cost-control baseline. P10 continuously checks the deployed environment for Terraform drift without automatically remediating it. P11 extends the developer-facing contract with monthly cost budgets and bounded environment lifecycle configuration.
+P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, the P9 Azure Policy governance baseline, and the P11 cost-control baseline. P10 continuously checks the deployed environment for Terraform drift without automatically remediating it. P11 extends the developer-facing contract with monthly cost budgets and bounded environment lifecycle configuration. P12 extends the same contract with an optional Kubernetes namespace capability while preserving the infrastructure ownership boundary: AzureForge manages namespace-level developer platform resources, while the shared AKS cluster remains externally managed.
 
 ## CLI
 
@@ -871,6 +880,162 @@ Success! 12 passed, 0 failed.
 
 P11 therefore establishes cost and lifecycle policy as part of the same reviewed AzureForge service contract used for infrastructure provisioning, while preserving deterministic desired state, Terraform validation, shared environment composition, and the existing GitHub review boundary.
 
+## P12 — Shared AKS Namespace Capability
+
+P12 extends AzureForge with an optional Kubernetes namespace capability designed to reuse an externally managed/shared AKS cluster.
+
+The ownership boundary is intentional:
+
+```text
+Shared infrastructure / Project 1
+        |
+        +-- Existing AKS cluster
+                |
+                | referenced by AzureForge
+                | cluster lifecycle remains externally owned
+                v
+AzureForge / Project 3
+        |
+        +-- service namespace
+                |
+                +-- Namespace
+                +-- ResourceQuota
+                +-- LimitRange
+                +-- AzureForge ownership labels
+```
+
+AzureForge does **not** provision, import, or own the lifecycle of the AKS cluster. It owns only the namespace-level developer platform capability composed onto that cluster.
+
+The reusable Terraform module is:
+
+```text
+infra/modules/aks-namespace
+```
+
+The module provisions:
+
+- a Kubernetes `Namespace`;
+- an `azureforge-quota` `ResourceQuota`;
+- an `azureforge-default-limits` `LimitRange`;
+- the `app.kubernetes.io/managed-by=azureforge` ownership label;
+- service, team, and environment labels supplied by the AzureForge environment composition.
+
+The default namespace governance baseline limits aggregate namespace consumption and supplies default container requests and limits. This makes the capability a governed tenant boundary rather than only a namespace-creation wrapper.
+
+The developer-facing service contract is:
+
+```yaml
+kubernetes:
+  namespace:
+    enabled: true
+```
+
+AzureForge derives the namespace name deterministically from `service.name`, so developers do not repeat the service identifier in the Kubernetes configuration.
+
+The resulting Terraform desired-state contract contains:
+
+```json
+{
+  "aks_namespace_enabled": true,
+  "aks_namespace_name": "pricing-api"
+}
+```
+
+The existing environment composition activates the namespace module only when:
+
+```text
+aks_namespace_enabled = true
+```
+
+When disabled, no Kubernetes namespace resources are composed.
+
+### AKS ownership and authentication boundary
+
+P12 deliberately keeps AKS cluster lifecycle management outside AzureForge.
+
+The architecture is:
+
+```text
+Developer service specification
+        |
+        | namespace intent
+        v
+AzureForge CLI
+        |
+        | deterministic desired state
+        v
+Terraform environment composition
+        |
+        | authenticated execution context
+        v
+Externally managed AKS cluster
+        |
+        v
+Governed service namespace
+```
+
+The service specification and generated `.tfvars.json` contain namespace intent only. They do not contain AKS client certificates, client keys, or other cluster credentials.
+
+Kubernetes authentication is supplied by the trusted Terraform execution environment through a kubeconfig path when the namespace capability is enabled. This keeps cluster access credentials outside the developer-facing desired-state contract.
+
+### Current portfolio environment
+
+The representative `pricing-api` service currently declares:
+
+```yaml
+kubernetes:
+  namespace:
+    enabled: false
+```
+
+Its generated desired state therefore contains:
+
+```json
+"aks_namespace_enabled": false,
+"aks_namespace_name": null
+```
+
+The capability remains disabled because no live shared AKS cluster was available in the accessible Azure environment when P12 was completed.
+
+AzureForge did **not** create a second AKS cluster merely to produce portfolio evidence. This preserves the intended platform-reuse architecture and avoids introducing an unnecessary cluster lifecycle and cost boundary into Project 3.
+
+### P12 validation evidence
+
+P12 was validated without requiring a live Kubernetes cluster.
+
+The isolated namespace module test suite verifies:
+
+- deterministic namespace creation;
+- AzureForge ownership labeling;
+- team-label propagation;
+- standard `ResourceQuota` composition;
+- standard `LimitRange` composition;
+- rejection of invalid Kubernetes namespace names.
+
+Result:
+
+```text
+Success! 2 passed, 0 failed.
+```
+
+The complete development-environment Terraform composition suite verifies both enabled and disabled AKS namespace configurations while retaining all earlier composition tests.
+
+Result:
+
+```text
+Success! 14 passed, 0 failed.
+```
+
+The AzureForge CLI suite verifies that the extended service specification and deterministic Terraform desired-state generation remain compatible with the existing platform contract.
+
+Result:
+
+```text
+Test summary: total: 11, failed: 0, succeeded: 11, skipped: 0
+```
+
+P12 exit criterion satisfied: **AzureForge demonstrates platform reuse by providing a governed namespace abstraction over an externally managed AKS cluster without provisioning or assuming lifecycle ownership of that cluster.**
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -921,5 +1086,5 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P9 — Add Azure Policy/tag/region checks
 - [x] P10 — Add drift detection and scheduled plan
 - [x] P11 — Add cost controls and environment TTL
-- [ ] P12 — Add optional AKS namespace template
+- [x] P12 — Add optional shared AKS namespace template
 - [ ] P13 — Polish documentation and onboarding demo

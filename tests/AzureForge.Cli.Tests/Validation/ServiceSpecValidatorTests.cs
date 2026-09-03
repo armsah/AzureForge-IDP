@@ -154,6 +154,13 @@ public sealed class ServiceSpecValidatorTests
             AppInsights = true,
             Alerts = "standard"
         },
+        Kubernetes = new KubernetesDefinition
+        {
+            Namespace = new KubernetesNamespaceDefinition
+            {
+                Enabled = false
+            }
+        },
         Cost = new CostDefinition
         {
             MonthlyBudgetEur = 80
@@ -187,6 +194,7 @@ public sealed class ServiceSpecValidatorTests
             Messaging = messaging ?? spec.Messaging,
             Security = security ?? spec.Security,
             Observability = spec.Observability,
+            Kubernetes = spec.Kubernetes,
             Cost = spec.Cost,
             Lifecycle = lifecycle ?? spec.Lifecycle
         };

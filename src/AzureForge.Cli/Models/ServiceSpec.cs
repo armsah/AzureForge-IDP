@@ -9,6 +9,7 @@ public sealed class ServiceSpec
     public MessagingDefinition Messaging { get; init; } = new();
     public SecurityDefinition Security { get; init; } = new();
     public ObservabilityDefinition Observability { get; init; } = new();
+    public KubernetesDefinition Kubernetes { get; init; } = new();
     public CostDefinition Cost { get; init; } = new();
     public LifecycleDefinition Lifecycle { get; init; } = new();
 }
@@ -68,4 +69,14 @@ public sealed class CostDefinition
 public sealed class LifecycleDefinition
 {
     public int TtlDays { get; init; }
+}
+
+public sealed class KubernetesDefinition
+{
+    public KubernetesNamespaceDefinition Namespace { get; init; } = new();
+}
+
+public sealed class KubernetesNamespaceDefinition
+{
+    public bool Enabled { get; init; }
 }

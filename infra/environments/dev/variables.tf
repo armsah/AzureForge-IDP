@@ -173,3 +173,42 @@ variable "tags" {
   description = "AzureForge generated resource tags."
   type        = map(string)
 }
+
+variable "aks_namespace_enabled" {
+  description = "Whether AzureForge composes a governed namespace on an externally managed AKS cluster."
+  type        = bool
+  default     = false
+}
+
+variable "aks_namespace_name" {
+  description = "Kubernetes namespace name used when AKS namespace composition is enabled."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      !var.aks_namespace_enabled ||
+      (
+        var.aks_namespace_name != null &&
+        length(var.aks_namespace_name) >= 1 &&
+        length(var.aks_namespace_name) <= 63 &&
+        can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.aks_namespace_name))
+      )
+    )
+    error_message = "aks_namespace_name must be a valid Kubernetes namespace when aks_namespace_enabled is true."
+  }
+}
+
+variable "aks_kubeconfig_path" {
+  description = "Path to a kubeconfig prepared by the trusted execution environment for the externally managed AKS cluster."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      !var.aks_namespace_enabled ||
+      try(length(trimspace(var.aks_kubeconfig_path)) > 0, false)
+    )
+    error_message = "aks_kubeconfig_path is required when aks_namespace_enabled is true."
+  }
+}
