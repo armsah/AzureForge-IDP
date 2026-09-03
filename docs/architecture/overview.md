@@ -2,219 +2,463 @@
 
 ## Context
 
-AzureForge is an internal developer platform control plane for producing approved Azure infrastructure desired state.
+AzureForge is an opinionated internal developer platform control plane for producing approved Azure infrastructure desired state from a small developer-facing service contract.
 
-Its core architectural decision is to separate:
+The architecture deliberately separates:
 
-1. the developer-facing request path; and
-2. the privileged infrastructure execution path.
+1. developer intent;
+2. platform validation and desired-state generation;
+3. human review;
+4. privileged infrastructure execution.
 
-The AzureForge API or CLI validates and generates desired state. It does not receive broad Azure subscription privileges.
+The AzureForge CLI does not require broad Azure subscription privileges.
 
 ## High-Level Architecture
 
 ```text
-+----------------------+
-| Application Developer|
-+----------+-----------+
-           |
-           | YAML / CLI request
-           v
-+----------------------+
-| AzureForge CLI / API |
-+----------+-----------+
-           |
-           +----------------------+
-           |                      |
-           v                      v
-+------------------+     +-------------------+
-| Service Catalog  |     | Platform State    |
-| + Guardrails     |     | PostgreSQL        |
-+--------+---------+     +-------------------+
-         |
-         | approved service model
-         v
-+----------------------+
-| Desired-State        |
-| Generator            |
-+----------+-----------+
-           |
-           | Terraform configuration
-           v
-+----------------------+
-| GitHub Pull Request  |
-+----------+-----------+
-           |
-           | review + policy checks
-           v
-+----------------------+
-| GitHub Actions       |
-+----------+-----------+
-           |
-           | OIDC federation
-           v
-+----------------------+
-| Microsoft Entra ID   |
-+----------+-----------+
-           |
-           | short-lived Azure token
-           v
-+----------------------+
-| Terraform            |
-+----------+-----------+
-           |
-           v
-+----------------------+
-| Azure Resources      |
-+----------------------+
++------------------------+
+| Application Developer  |
++-----------+------------+
+            |
+            | YAML service specification
+            v
++------------------------+
+| AzureForge CLI         |
+| C# / .NET              |
++-----------+------------+
+            |
+            | parse + validate
+            v
++------------------------+
+| Platform Guardrails    |
+| Approved capabilities  |
++-----------+------------+
+            |
+            | deterministic generation
+            v
++------------------------+
+| Terraform Desired      |
+| State (.tfvars.json)   |
++-----------+------------+
+            |
+            | source-controlled change
+            v
++------------------------+
+| GitHub Pull Request    |
++-----------+------------+
+            |
+            | human review
+            v
++------------------------+
+| GitHub Actions         |
++-----------+------------+
+            |
+            | OIDC federation
+            v
++------------------------+
+| Microsoft Entra ID     |
++-----------+------------+
+            |
+            | short-lived Azure token
+            v
++------------------------+
+| Terraform              |
++-----------+------------+
+            |
+            v
++------------------------+
+| Azure Resources        |
++------------------------+
 ```
 
-## Components
+## Architectural Layers
 
-### CLI
+### 1. Developer Contract
 
-A C# CLI based on `System.CommandLine` accepts service specifications, validates them, and later generates provisioning artifacts.
+Developers describe service intent through YAML.
 
-### Control API
+Representative contract:
 
-An ASP.NET Core API exposes equivalent platform operations for programmatic use.
+```yaml
+service:
+  name: pricing-api
+  owner: commerce-team
+  criticality: medium
 
-The API is a control-plane interface, not a privileged subscription provisioning identity.
+runtime:
+  language: dotnet
+  version: "10"
 
-### Catalog
+compute:
+  type: container-apps
+  minReplicas: 0
+  maxReplicas: 5
 
-The catalog defines approved:
+data:
+  postgres: false
 
-- runtimes;
-- runtime versions;
-- compute types;
-- Azure regions;
-- service capabilities;
-- SKU profiles;
-- observability profiles;
-- scaling constraints.
+messaging:
+  serviceBus:
+    queues: []
 
-### Platform State
+security:
+  publicIngress: false
+  workloadIdentity: true
 
-A small PostgreSQL database records platform metadata such as:
+observability:
+  appInsights: true
+  alerts: standard
 
-- requested services;
-- owners;
-- environments;
-- provisioning status;
-- timestamps;
-- workflow identifiers;
-- platform-generated metadata.
+kubernetes:
+  namespace:
+    enabled: false
 
-The Terraform state remains separate from AzureForge platform metadata.
+cost:
+  monthlyBudgetEur: 80
 
-### Desired-State Generator
+lifecycle:
+  ttlDays: 30
+```
 
-The generator converts a validated service specification into deterministic Terraform environment configuration.
+The specification describes required capabilities rather than Terraform implementation details.
 
-The generator composes approved modules instead of generating arbitrary Terraform resource definitions.
+### 2. AzureForge CLI
 
-### GitHub
+The current developer-facing control plane is the C# CLI in:
 
-GitHub provides:
+```text
+src/AzureForge.Cli
+```
 
-- source control;
-- pull requests;
-- human review;
-- policy-check workflows;
-- provisioning workflows;
-- scheduled drift workflows;
-- protected environments.
+It is responsible for:
 
-### Terraform
+- parsing YAML;
+- mapping input into a typed service model;
+- validating supported platform policy;
+- returning deterministic CLI exit codes;
+- generating deterministic Terraform desired state.
 
-Terraform modules provide reusable implementations for:
+The CLI does not directly own privileged Azure deployment credentials.
+
+### 3. Platform Guardrails
+
+AzureForge validates supported service intent before Terraform execution.
+
+Current guardrails include:
+
+- approved runtime and compute patterns;
+- allowed Azure regions;
+- workload identity requirements;
+- supported ingress behavior;
+- bounded scaling configuration;
+- supported observability profiles;
+- cost-budget validation;
+- environment TTL validation;
+- Kubernetes namespace naming validation.
+
+Azure Policy provides authoritative Azure-side enforcement for selected governance controls.
+
+### 4. Desired-State Generator
+
+The generator converts a valid service specification into deterministic Terraform input.
+
+Representative output:
+
+```text
+provisioning/services/pricing-api/dev.tfvars.json
+```
+
+The generator derives platform-controlled values including:
+
+- Azure resource names;
+- environment;
+- Azure region;
+- observability configuration;
+- optional PaaS capability flags;
+- budget configuration;
+- lifecycle configuration;
+- optional AKS namespace intent;
+- required platform tags.
+
+Developers do not generate arbitrary Terraform resources.
+
+### 5. Terraform Composition
+
+Terraform implements approved AzureForge capabilities through reusable modules.
+
+Current module categories include:
 
 - resource groups;
-- identity;
-- monitoring;
+- managed identity;
 - Container Apps;
-- Service Bus;
+- monitoring;
+- observability;
 - PostgreSQL;
-- Storage;
-- private endpoints;
-- future supported capabilities.
+- Service Bus;
+- governance;
+- cost controls;
+- governed AKS namespaces.
 
-### Microsoft Entra ID
+Environment composition lives under:
 
-GitHub Actions authenticates to Azure using workload identity federation.
+```text
+infra/environments/dev
+```
 
-No long-lived Azure client secret is required for the standard CI/CD path.
+The composition selects and combines approved modules according to generated desired state.
 
-### Azure Policy
+### 6. GitHub Review Boundary
 
-Azure Policy provides authoritative Azure-side enforcement for selected organizational controls such as:
+GitHub provides the source-controlled trust boundary between generated desired state and privileged infrastructure execution.
 
-- allowed regions;
-- required tags;
-- diagnostic requirements;
-- prohibited resource configurations.
+AzureForge uses:
+
+- deterministic provisioning artifacts;
+- pull requests;
+- human review;
+- provisioning workflows;
+- governance workflows;
+- scheduled drift workflows;
+- retained workflow evidence.
+
+The developer-facing CLI is therefore separated from subscription-level infrastructure execution.
 
 ## Authorization Boundary
 
-The most important security boundary is between desired-state generation and privileged Terraform execution.
+The most important security boundary is:
 
 ```text
-AzureForge API
-     |
-     | no broad subscription Contributor role
-     v
+Developer
+    |
+    v
+AzureForge CLI
+    |
+    | no broad subscription privilege
+    v
 Generated desired state
-     |
-     v
-Reviewed pull request
-     |
-     v
-GitHub Actions identity
-     |
-     | federated short-lived credentials
-     v
+    |
+    v
+GitHub pull request
+    |
+    | human review
+    v
+GitHub Actions
+    |
+    | workload identity federation
+    v
+Microsoft Entra ID
+    |
+    | short-lived token
+    v
 Azure permissions
 ```
 
-This design improves auditability and reduces the blast radius of the developer-facing control plane.
+This architecture reduces the blast radius of the developer-facing control plane and improves auditability.
+
+## Secretless GitHub-to-Azure Authentication
+
+GitHub Actions authenticates to Azure through Microsoft Entra workload identity federation.
+
+The standard CI path therefore does not require a long-lived Azure client secret.
+
+The repository includes:
+
+```text
+.github/workflows/p3-oidc-smoke.yml
+```
+
+to demonstrate and validate the OIDC trust path.
+
+## Container Apps Golden Path
+
+The first-class compute implementation is Azure Container Apps.
+
+The platform owns standard infrastructure decisions such as:
+
+- resource naming;
+- workload identity;
+- ingress defaults;
+- replica constraints;
+- monitoring integration;
+- tags;
+- Terraform composition.
+
+The application team expresses only service-level intent.
+
+## Optional PaaS Capabilities
+
+### PostgreSQL
+
+Azure Database for PostgreSQL Flexible Server can be enabled through the service specification.
+
+AzureForge controls the Terraform implementation and naming conventions.
+
+Credentials are supplied through the trusted execution path rather than committed into reviewed developer desired state.
+
+### Service Bus
+
+Azure Service Bus can be enabled by declaring required queues.
+
+AzureForge owns standard namespace configuration and uses identity-based access rather than local/SAS authentication.
+
+## Observable-by-Default Architecture
+
+AzureForge composes:
+
+- Log Analytics;
+- Application Insights;
+- Azure Monitor workbooks;
+- HTTP 5xx alerting;
+- container restart alerting.
+
+The developer selects an approved observability profile instead of wiring monitoring infrastructure manually.
+
+## Governance Architecture
+
+AzureForge manages Azure Policy definitions and assignments through reviewed Terraform.
+
+Current governance includes:
+
+- deployment-region restrictions;
+- mandatory platform tags;
+- `managed-by=azureforge` ownership enforcement.
+
+Azure Policy acts as authoritative platform-side enforcement.
+
+## Drift Detection
+
+Scheduled Terraform plan execution compares deployed infrastructure with reviewed desired state.
+
+The drift workflow uses Terraform detailed exit codes to distinguish:
+
+- clean state;
+- infrastructure drift;
+- execution errors.
+
+Drift is surfaced to operators but is not automatically remediated.
+
+This preserves the same review boundary used for normal infrastructure changes.
+
+## Cost and Lifecycle Architecture
+
+AzureForge composes a per-environment Azure budget from:
+
+```yaml
+cost:
+  monthlyBudgetEur: 80
+```
+
+The budget provides cost visibility and alerting rather than a hard spending shutdown mechanism.
+
+Lifecycle intent is expressed through:
+
+```yaml
+lifecycle:
+  ttlDays: 30
+```
+
+TTL values are validated by the platform.
+
+The current implementation does not automatically destroy an environment when the TTL expires.
+
+## Shared AKS Ownership Boundary
+
+AzureForge can compose namespace-level platform resources into an externally managed/shared AKS cluster.
+
+```text
+Externally managed AKS platform
+            |
+            | cluster lifecycle
+            v
+       Shared AKS cluster
+            |
+            | referenced by AzureForge
+            v
++-------------------------------+
+| AzureForge namespace capability|
++-------------------------------+
+| Namespace                     |
+| ResourceQuota                 |
+| LimitRange                    |
+| AzureForge ownership labels   |
++-------------------------------+
+```
+
+AzureForge does not own the AKS cluster lifecycle.
+
+When enabled, it manages only:
+
+- Kubernetes `Namespace`;
+- `ResourceQuota`;
+- `LimitRange`;
+- platform labels.
+
+Kubernetes authentication is supplied by the trusted Terraform execution environment through kubeconfig and is not generated as part of developer desired state.
+
+The P12 implementation was validated with mocked Terraform tests because no live shared AKS cluster was available at that stage.
+
+## Terraform State Boundary
+
+Terraform infrastructure state is separate from developer service specifications and generated platform metadata.
+
+The development environment uses an Azure Storage remote backend for privileged execution.
+
+Local validation and mocked testing can initialize with:
+
+```powershell
+terraform -chdir=infra\environments\dev init -backend=false
+```
+
+This avoids requiring personal developer access to the privileged Terraform state backend.
 
 ## Desired-State Principle
 
-AzureForge records developer intent and generates infrastructure configuration.
+AzureForge treats generated infrastructure configuration as source-controlled desired state.
 
-The generated Terraform configuration is source-controlled so that:
+This provides:
 
-- changes can be reviewed;
-- plans can be inspected;
-- drift can be detected;
-- rollback history exists;
-- infrastructure ownership is visible;
-- privileged automation has a clear input boundary.
+- reviewable changes;
+- deterministic inputs;
+- inspectable Terraform plans;
+- drift detection;
+- rollback history;
+- visible infrastructure ownership;
+- a clear privileged-execution boundary.
 
-## Initial Deployment Scope
+## Current Scope
 
-The first implementation focuses on:
+The portfolio implementation currently focuses on:
 
 - development environments;
-- .NET workloads;
+- .NET services;
 - Azure Container Apps;
 - managed identity;
 - Azure Monitor;
 - optional PostgreSQL;
-- optional Service Bus.
+- optional Service Bus;
+- Azure Policy governance;
+- drift detection;
+- Azure cost budgets;
+- bounded lifecycle intent;
+- optional shared-AKS namespace provisioning.
 
-Additional capabilities are added only through approved platform modules and catalog entries.
+## Deliberate Constraints
 
-## Future Evolution
+AzureForge is a portfolio internal-developer-platform implementation rather than a production multi-tenant platform service.
 
-Later phases extend the architecture with:
+Current deliberate limitations include:
 
-- richer platform state;
-- scheduled Terraform plan/drift reporting;
-- cost budgets;
-- environment TTL;
-- production protection;
-- optional AKS namespace provisioning;
-- service catalog views;
-- platform SLOs.
+- primary environment is `dev`;
+- primary runtime is .NET;
+- primary compute is Azure Container Apps;
+- environment TTL does not yet trigger automatic destruction;
+- shared AKS namespace reuse was validated with Terraform mocks because no live shared AKS cluster was available during P12;
+- no second AKS cluster was provisioned solely for portfolio evidence.
+
+These constraints separate demonstrated platform behavior from future production evolution.
+
+## Architecture Principle
+
+The central AzureForge architecture principle is:
+
+> Developers request approved capabilities. AzureForge owns the implementation, review boundary, governance, and trusted execution path.

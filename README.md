@@ -1,85 +1,307 @@
 # AzureForge
 
-AzureForge is an opinionated internal developer platform for provisioning production-oriented Azure services through declarative service specifications.
+AzureForge is an opinionated internal developer platform for provisioning governed Azure services from a small declarative YAML contract.
 
-The platform provides a governed golden path for application teams while keeping privileged infrastructure changes reviewable through GitHub pull requests and applying Terraform with federated Azure identity.
+Application teams describe service intent. AzureForge validates that intent, generates deterministic Terraform desired state, carries infrastructure changes through a GitHub pull-request review boundary, and delegates privileged execution to GitHub Actions using Microsoft Entra workload identity federation.
+
+The project demonstrates an internal platform engineering model rather than a collection of standalone Terraform modules.
 
 ## Status
 
-**P12 complete — AzureForge now provides an optional governed Kubernetes namespace capability for reuse of an externally managed/shared AKS cluster, without taking ownership of the cluster lifecycle.**
+**P13 complete — the planned AzureForge portfolio roadmap from P0 through P13 is complete.**
 
-AzureForge can translate developer namespace intent into deterministic Terraform desired state and compose a Kubernetes `Namespace`, `ResourceQuota`, and `LimitRange`. The capability is validated with mocked Terraform tests because no live shared AKS cluster was available during P12.
+AzureForge now includes a documented developer onboarding path, portfolio demo walkthrough, current architecture documentation, golden-path guidance, deterministic CLI and Terraform tests, governance, observability, drift detection, cost controls, and optional shared-AKS namespace reuse.
 
-Next implementation phase: **P13 — documentation polish and onboarding demo**.
+The repository is intended as a portfolio implementation of an Azure internal developer platform and explicitly documents the boundary between demonstrated capabilities and future production evolution.
 
-## Current Capabilities
+## Why AzureForge
 
-AzureForge currently provides:
+Application teams should not need to independently design:
 
-- a declarative YAML service specification;
-- a .NET 10 C# CLI;
-- YAML parsing into a typed service model;
-- golden-path and catalog validation;
-- field-level validation errors;
-- deterministic CLI exit codes;
-- automated parser and validator tests;
-- reusable Terraform foundation modules;
-- native Terraform module tests;
-- a tested Terraform composition example.
-- deterministic service-spec to Terraform desired-state generation;
-- canonical `.tfvars.json` serialization;
-- golden-file testing for generated Terraform input.
-- GitHub Actions provisioning-request generation;
-- deterministic provisioning branches and `.tfvars.json` artifacts;
-- pull-request-based human review before privileged infrastructure execution.
-- reusable Terraform modules and environment composition;
+- Terraform provider layout;
+- Azure resource naming;
+- workload identity;
+- GitHub-to-Azure credentials;
+- monitoring integration;
+- Azure Policy assignments;
+- required organizational tags;
+- standard alerts;
+- drift-detection workflows;
+- cost controls.
+
+AzureForge moves those concerns into an approved platform implementation.
+
+Developers request capabilities through a service specification while AzureForge owns the infrastructure composition, governance, review boundary, and trusted execution path.
+
+## Architecture at a Glance
+
+```text
+Application Developer
+        |
+        | YAML service specification
+        v
++----------------------+
+| AzureForge CLI       |
+| C# / .NET            |
++----------+-----------+
+           |
+           | validate + generate
+           v
++----------------------+
+| Deterministic        |
+| Terraform desired    |
+| state                |
++----------+-----------+
+           |
+           | source-controlled change
+           v
++----------------------+
+| GitHub Pull Request  |
++----------+-----------+
+           |
+           | human review
+           v
++----------------------+
+| GitHub Actions       |
++----------+-----------+
+           |
+           | OIDC federation
+           v
++----------------------+
+| Microsoft Entra ID   |
++----------+-----------+
+           |
+           | short-lived token
+           v
++----------------------+
+| Terraform            |
++----------+-----------+
+           |
+           v
++----------------------+
+| Governed Azure       |
+| resources            |
++----------------------+
+```
+
+The primary security boundary is between developer-facing desired-state generation and privileged Terraform execution.
+
+The AzureForge CLI does not require broad Azure subscription privileges.
+
+## Golden Path
+
+The first-class workload is a .NET service running on Azure Container Apps.
+
+The current platform can compose:
+
+- resource group;
+- deterministic Azure resource names;
+- user-assigned managed identity;
+- Azure Container Apps;
+- Log Analytics;
+- Application Insights;
+- Azure Monitor workbook;
+- standard metric alerts;
+- Azure Policy governance;
+- per-environment Azure budget;
+- optional PostgreSQL Flexible Server;
+- optional Azure Service Bus;
+- optional governed Kubernetes namespace on an externally managed/shared AKS cluster.
+
+AzureForge also provides scheduled Terraform drift detection and bounded environment lifecycle intent.
+
+## Quick Start
+
+Validate the canonical service specification:
+
+```powershell
+dotnet run `
+  --project .\src\AzureForge.Cli\AzureForge.Cli.csproj `
+  -- validate `
+  .\examples\pricing-api.yaml
+```
+
+Expected:
+
+```text
+Valid AzureForge service specification: pricing-api
+```
+
+Generate deterministic Terraform desired state:
+
+```powershell
+dotnet run `
+  --project .\src\AzureForge.Cli\AzureForge.Cli.csproj `
+  -- generate `
+  .\examples\pricing-api.yaml `
+  --output .\provisioning\services\pricing-api\dev.tfvars.json
+```
+
+Inspect the generated artifact:
+
+```powershell
+Get-Content .\provisioning\services\pricing-api\dev.tfvars.json
+```
+
+The same valid service specification and AzureForge platform version should produce equivalent desired state.
+
+## Example Service Specification
+
+The canonical developer contract is:
+
+```yaml
+service:
+  name: pricing-api
+  owner: commerce-team
+  criticality: medium
+
+runtime:
+  language: dotnet
+  version: "10"
+
+compute:
+  type: container-apps
+  minReplicas: 0
+  maxReplicas: 5
+
+data:
+  postgres: false
+
+messaging:
+  serviceBus:
+    queues: []
+
+security:
+  publicIngress: false
+  workloadIdentity: true
+
+observability:
+  appInsights: true
+  alerts: standard
+
+kubernetes:
+  namespace:
+    enabled: false
+
+cost:
+  monthlyBudgetEur: 80
+
+lifecycle:
+  ttlDays: 30
+```
+
+Developers specify service intent rather than Azure resource IDs or Terraform resource definitions.
+
+## Platform Capabilities
+
+AzureForge currently demonstrates:
+
+- typed YAML service-spec parsing and policy validation;
+- deterministic service-spec to Terraform `.tfvars.json` generation;
+- reusable Terraform module composition;
 - Azure Blob Storage remote Terraform state;
-- secretless GitHub-to-Azure authentication using OIDC;
-- live Azure Container Apps provisioning;
-- user-assigned workload identity;
-- Log Analytics and Application Insights baseline;
-- configurable Container Apps scaling and ingress;
-- optional Azure Database for PostgreSQL Flexible Server provisioning;
-- optional Azure Service Bus namespace and queue provisioning;
-- deterministic globally unique PaaS resource naming;
-- PostgreSQL administrator credentials supplied through GitHub Actions secrets rather than reviewed desired-state artifacts;
-- Service Bus local/SAS authentication disabled in favor of identity-based access;
-- composition tests covering PostgreSQL-only, Service-Bus-only, combined, and neither-capability configurations.
-- default Azure Monitor workbook provisioning for each service;
-- Container App log-volume, request, and restart visualizations;
-- standard HTTP 5xx and container-restart metric alerts;
-- desired-state-controlled alert policy using `standard` or `none`;
-- observability composition tests covering standard alerts and workbook-only configurations.
-- reusable Terraform governance module for Azure Policy;
-- deny-mode enforcement of approved Azure regions;
-- approved deployment regions restricted to `westeurope` and `northeurope`;
-- mandatory `service`, `team`, `environment`, `managed-by`, and `criticality` resource tags;
-- enforced `managed-by=azureforge` ownership marker;
-- resource-group-scoped Azure Policy assignments;
-- custom Azure Policy definitions managed through reviewed Terraform workflows;
-- GitHub OIDC policy deployment without long-lived Azure credentials;
-- Terraform governance tests for valid and unsafe configurations;
-- live Azure Policy negative tests proving unsafe resource creation is denied.
-- Scheduled Terraform drift detection against reviewed service desired state.
-- GitHub OIDC authentication with no long-lived Azure credentials.
-- Terraform `-detailed-exitcode` classification for clean state, drift, and execution errors.
-- GitHub Actions job summaries and retained Terraform drift-report artifacts.
-- Visible workflow failure when drift is detected, without automatic remediation.
-- per-environment Azure cost budgets through Terraform;
-- declarative monthly budget configuration using `cost.monthlyBudgetEur`;
-- declarative environment lifecycle configuration using `lifecycle.ttlDays`;
-- environment TTL validation restricted to 1–90 days;
-- reusable Terraform cost-control module;
-- Terraform composition tests covering valid cost controls and invalid budget/TTL configuration.
-- optional governed Kubernetes namespace capability;
-- reuse of an externally managed/shared AKS cluster rather than provisioning another cluster;
-- deterministic AKS namespace naming derived from `service.name`;
-- namespace-level `ResourceQuota` and `LimitRange` governance;
-- AzureForge service, team, environment, and ownership labels on managed namespaces;
-- Kubernetes authentication supplied by the trusted execution environment through kubeconfig rather than generated service desired state;
-- mocked Terraform module and composition tests for the AKS namespace capability.
+- secretless GitHub-to-Azure OIDC authentication;
+- pull-request-based human review before privileged Terraform execution;
+- Azure Container Apps golden-path provisioning;
+- workload identity;
+- optional PostgreSQL Flexible Server;
+- optional Service Bus queues;
+- identity-first Service Bus configuration;
+- Log Analytics and Application Insights;
+- standard Azure Monitor dashboards and alerts;
+- Azure Policy region and tag guardrails;
+- negative governance tests proving unsafe Azure resource creation can be denied;
+- scheduled Terraform drift detection without automatic remediation;
+- Azure cost budgets;
+- bounded environment TTL validation;
+- optional governed Kubernetes namespace composition over an externally managed/shared AKS cluster;
+- mocked AKS namespace testing without provisioning a second cluster.
 
-P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, the P9 Azure Policy governance baseline, and the P11 cost-control baseline. P10 continuously checks the deployed environment for Terraform drift without automatically remediating it. P11 extends the developer-facing contract with monthly cost budgets and bounded environment lifecycle configuration. P12 extends the same contract with an optional Kubernetes namespace capability while preserving the infrastructure ownership boundary: AzureForge manages namespace-level developer platform resources, while the shared AKS cluster remains externally managed.
+## Security and Review Boundary
+
+AzureForge deliberately separates developer interaction from privileged Azure execution.
+
+```text
+Developer intent
+      |
+      v
+Validated service specification
+      |
+      v
+Generated Terraform desired state
+      |
+      v
+GitHub pull request
+      |
+      | human review
+      v
+GitHub Actions
+      |
+      | Microsoft Entra workload identity federation
+      v
+Terraform
+      |
+      v
+Azure
+```
+
+The standard CI path uses short-lived federated credentials instead of a long-lived Azure client secret.
+
+Azure Policy provides authoritative Azure-side enforcement for selected organizational guardrails.
+
+## Portfolio Evidence
+
+The implementation includes evidence across the complete roadmap:
+
+- CLI parser, validator, and golden-file tests;
+- Terraform module tests;
+- environment composition tests;
+- GitHub provisioning and OIDC workflows;
+- live Azure Container Apps provisioning evidence;
+- optional PaaS composition;
+- observability workflows;
+- Azure Policy positive and negative tests;
+- scheduled drift reporting;
+- cost and lifecycle configuration;
+- shared-AKS namespace module and composition tests.
+
+At P12 completion, the validated test state was:
+
+```text
+AzureForge CLI tests:             11 passed, 0 failed
+Dev Terraform composition tests: 14 passed, 0 failed
+AKS namespace module tests:       2 passed, 0 failed
+```
+
+## Documentation
+
+- [Developer Guide](docs/developer-guide.md)
+- [Portfolio Demo](docs/portfolio-demo.md)
+- [Architecture Overview](docs/architecture/overview.md)
+- [Golden Path](docs/golden-path.md)
+- [Guardrails](docs/guardrails.md)
+- [Product Brief](docs/product-brief.md)
+
+For an end-to-end onboarding path, start with the [Developer Guide](docs/developer-guide.md).
+
+For a concise interview or portfolio walkthrough, use the [Portfolio Demo](docs/portfolio-demo.md).
+
+## Current Portfolio Boundaries
+
+AzureForge is a portfolio internal-developer-platform implementation rather than a production multi-tenant platform product.
+
+Current deliberate constraints include:
+
+- primary environment is `dev`;
+- primary runtime is .NET;
+- primary compute platform is Azure Container Apps;
+- PostgreSQL and Service Bus are optional capabilities rather than always-on infrastructure;
+- environment TTL is validated but does not automatically destroy resources;
+- no live shared AKS cluster was available during P12 validation;
+- the AKS namespace capability was therefore validated with mocked Terraform tests;
+- no second AKS cluster was created solely to generate portfolio evidence.
+
+These constraints distinguish implemented behavior from future production evolution.
 
 ## CLI
 
@@ -1036,7 +1258,132 @@ Test summary: total: 11, failed: 0, succeeded: 11, skipped: 0
 
 P12 exit criterion satisfied: **AzureForge demonstrates platform reuse by providing a governed namespace abstraction over an externally managed AKS cluster without provisioning or assuming lifecycle ownership of that cluster.**
 
-## Architecture Direction
+## P13 — Documentation Polish and Developer Onboarding
+
+P13 completes the AzureForge portfolio roadmap by turning the implementation evidence from P0–P12 into a coherent developer onboarding and portfolio presentation path.
+
+The phase adds two primary documentation artifacts:
+
+```text
+docs/developer-guide.md
+docs/portfolio-demo.md
+```
+
+### Developer onboarding
+
+`docs/developer-guide.md` documents the supported developer journey from service intent through reviewed infrastructure execution.
+
+The guide covers:
+
+- repository prerequisites;
+- service-spec validation;
+- deterministic Terraform desired-state generation;
+- the GitHub pull-request review boundary;
+- Microsoft Entra workload identity federation;
+- Container Apps provisioning;
+- optional PostgreSQL and Service Bus capabilities;
+- observability;
+- governance;
+- drift detection;
+- cost controls;
+- lifecycle intent;
+- optional shared-AKS namespace reuse;
+- local CLI and Terraform validation commands;
+- current portfolio limitations.
+
+The developer onboarding flow is:
+
+```text
+Developer
+   |
+   | YAML service specification
+   v
+AzureForge CLI
+   |
+   | validation
+   v
+Deterministic Terraform desired state
+   |
+   v
+GitHub pull request
+   |
+   | human review
+   v
+Trusted GitHub OIDC workflow
+   |
+   v
+Terraform
+   |
+   v
+Azure
+```
+
+### Portfolio demo
+
+`docs/portfolio-demo.md` provides a concise end-to-end demonstration path for presenting AzureForge as an internal developer platform.
+
+The walkthrough focuses on:
+
+1. the platform problem;
+2. the developer-facing YAML contract;
+3. validation;
+4. deterministic generation;
+5. Terraform module composition;
+6. the human review boundary;
+7. secretless GitHub OIDC authentication;
+8. Container Apps golden-path provisioning;
+9. optional PaaS capabilities;
+10. observable-by-default behavior;
+11. Azure Policy guardrails;
+12. drift visibility;
+13. cost and lifecycle controls;
+14. shared AKS reuse;
+15. automated test evidence.
+
+### Documentation refresh
+
+P13 also refreshes:
+
+```text
+docs/architecture/overview.md
+docs/golden-path.md
+README.md
+```
+
+The updated architecture documentation reflects capabilities actually implemented through P12 rather than describing completed work as future evolution.
+
+The golden-path documentation now reflects the current service contract, including:
+
+```yaml
+kubernetes:
+  namespace:
+    enabled: false
+
+cost:
+  monthlyBudgetEur: 80
+
+lifecycle:
+  ttlDays: 30
+```
+
+The README now acts as the portfolio landing page while retaining the detailed P0–P13 implementation record.
+
+### Portfolio-ready exit criterion
+
+A reviewer can now:
+
+- understand the platform problem from the repository landing page;
+- inspect the developer contract;
+- validate a service specification;
+- generate deterministic Terraform desired state;
+- understand the human review and privileged-execution boundary;
+- trace platform intent into Terraform modules and GitHub workflows;
+- understand governance, observability, drift, cost, and shared-infrastructure behavior;
+- follow either a developer onboarding guide or a short portfolio demonstration.
+
+P13 exit criterion satisfied: **AzureForge is portfolio-ready with a documented developer onboarding path, an end-to-end demonstration guide, current architecture and golden-path documentation, and implementation evidence spanning P0–P13.**
+
+## Architecture Principles
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
 
@@ -1045,24 +1392,21 @@ Developer
     |
     | service specification
     v
-AzureForge CLI / API
+AzureForge CLI
     |
-    | validation
-    v
-Catalog + Guardrails
-    |
-    | deterministic generation
+    | validation + deterministic generation
     v
 Terraform Desired State
     |
-    | pull request
+    | source-controlled change
     v
-Review + Policy Checks
+GitHub Pull Request
     |
+    | human review
     v
 GitHub Actions
     |
-    | workload identity federation
+    | Microsoft Entra workload identity federation
     v
 Terraform
     |
@@ -1070,7 +1414,33 @@ Terraform
 Azure
 ```
 
-The AzureForge API is not intended to hold broad Azure subscription `Owner` or `Contributor` permissions. Privileged Terraform operations will execute through reviewed GitHub workflows using federated identity.
+The AzureForge CLI is not intended to hold broad Azure subscription `Owner` or `Contributor` permissions. Privileged Terraform operations execute through reviewed GitHub workflows using short-lived federated identity.
+
+The current architecture is built around these principles:
+
+- developers express service intent rather than raw Terraform implementation;
+- platform capabilities are implemented through approved reusable Terraform modules;
+- desired state is deterministic and source-controlled;
+- privileged execution is separated from developer-facing validation and generation;
+- GitHub pull requests provide the human review boundary;
+- Microsoft Entra workload identity federation avoids long-lived Azure client secrets;
+- Azure Policy provides authoritative enforcement for selected governance controls;
+- Terraform drift is surfaced without automatic remediation;
+- Azure budgets provide cost visibility and alerting;
+- environment TTL is validated as platform lifecycle intent but does not yet trigger automatic destruction;
+- AzureForge can manage namespace-level Kubernetes resources while leaving shared AKS cluster lifecycle ownership outside the platform.
+
+Potential future production evolution may include:
+
+- multi-environment promotion beyond `dev`;
+- stronger production protection and approval boundaries;
+- automated TTL enforcement and teardown;
+- a richer service catalog;
+- multi-team tenancy;
+- a platform API;
+- platform-level SLOs and operational metrics.
+
+These are future evolution areas and are not claimed as implemented capabilities in the current portfolio.
 
 ## Roadmap
 
@@ -1087,4 +1457,6 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P10 — Add drift detection and scheduled plan
 - [x] P11 — Add cost controls and environment TTL
 - [x] P12 — Add optional shared AKS namespace template
-- [ ] P13 — Polish documentation and onboarding demo
+- [x] P13 — Polish documentation and onboarding demo
+
+The planned AzureForge portfolio roadmap is complete.
