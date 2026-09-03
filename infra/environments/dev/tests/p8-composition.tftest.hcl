@@ -21,6 +21,7 @@ variables {
   application_insights_enabled = true
   alerts                       = "standard"
   monthly_budget_eur           = 80
+  environment_ttl_days         = 30
 
   tags = {
     service     = "pricing-api"

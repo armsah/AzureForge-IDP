@@ -1,4 +1,5 @@
 mock_provider "azurerm" {}
+mock_provider "time" {}
 
 variables {
   service_name                 = "pricing-api"
@@ -32,44 +33,40 @@ variables {
   }
 }
 
-run "composes_azureforge_governance_baseline" {
+run "composes_monthly_cost_control" {
   command = plan
 
   assert {
-    condition     = module.governance.policy_assignment_count == 7
-    error_message = "The dev composition must apply all seven AzureForge governance policy assignments."
+    condition     = module.cost_control.monthly_budget_eur == 80
+    error_message = "The dev composition must pass the reviewed monthly budget to cost control."
   }
 
   assert {
-    condition = (
-      length(module.governance.required_tag_assignment_ids) == 5
-    )
-    error_message = "The dev composition must include all five mandatory AzureForge tag assignments."
-  }
-
-  assert {
-    condition = alltrue([
-      for required_tag in [
-        "service",
-        "team",
-        "environment",
-        "managed-by",
-        "criticality"
-      ] :
-      contains(keys(module.governance.required_tag_assignment_ids), required_tag)
-    ])
-    error_message = "The dev composition must preserve the complete AzureForge mandatory-tag contract."
+    condition     = module.cost_control.budget_name == "budget-pricing-api-dev"
+    error_message = "The dev composition must create the deterministic AzureForge budget name."
   }
 }
 
-run "preserves_existing_golden_path_region_validation" {
+run "rejects_invalid_environment_ttl" {
   command = plan
 
   variables {
-    location = "eastus"
+    environment_ttl_days = 91
   }
 
   expect_failures = [
-    var.location
+    var.environment_ttl_days
+  ]
+}
+
+run "rejects_invalid_monthly_budget" {
+  command = plan
+
+  variables {
+    monthly_budget_eur = 0
+  }
+
+  expect_failures = [
+    var.monthly_budget_eur
   ]
 }

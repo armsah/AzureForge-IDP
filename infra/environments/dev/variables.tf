@@ -147,8 +147,26 @@ variable "alerts" {
 }
 
 variable "monthly_budget_eur" {
-  description = "Requested monthly budget in EUR. Budget enforcement is deferred to P11."
+  description = "Monthly Azure cost budget in EUR for the service environment."
   type        = number
+
+  validation {
+    condition     = var.monthly_budget_eur > 0
+    error_message = "monthly_budget_eur must be greater than 0."
+  }
+}
+
+variable "environment_ttl_days" {
+  description = "Maximum lifecycle in days for the disposable service environment."
+  type        = number
+
+  validation {
+    condition = (
+      var.environment_ttl_days >= 1 &&
+      var.environment_ttl_days <= 90
+    )
+    error_message = "environment_ttl_days must be between 1 and 90 days."
+  }
 }
 
 variable "tags" {

@@ -6,6 +6,14 @@ module "resource_group" {
   tags     = var.tags
 }
 
+module "cost_control" {
+  source = "../../modules/cost-control"
+
+  resource_group_id  = module.resource_group.id
+  budget_name        = "budget-${var.service_name}-${var.environment}"
+  monthly_budget_eur = var.monthly_budget_eur
+}
+
 module "governance" {
   source = "../../modules/governance"
 

@@ -21,4 +21,5 @@ public sealed record TerraformDesiredState(
     bool ApplicationInsightsEnabled,
     string Alerts,
     decimal MonthlyBudgetEur,
+    int EnvironmentTtlDays,
     IReadOnlyDictionary<string, string> Tags);

@@ -30,3 +30,6 @@ observability:
 
 cost:
   monthlyBudgetEur: 80
+
+lifecycle:
+  ttlDays: 30

@@ -19,8 +19,23 @@ public sealed partial class ServiceSpecValidator
         ValidateSecurity(spec.Security, errors);
         ValidateObservability(spec.Observability, errors);
         ValidateCost(spec.Cost, errors);
+        ValidateLifecycle(spec.Lifecycle, errors);
 
         return new ValidationResult(errors);
+    }
+
+    private static void ValidateLifecycle(
+    LifecycleDefinition lifecycle,
+    List<ValidationError> errors)
+    {
+        if (lifecycle.TtlDays < 1)
+        {
+            errors.Add(new("lifecycle.ttlDays", "must be greater than or equal to 1."));
+        }
+        else if (lifecycle.TtlDays > 90)
+        {
+            errors.Add(new("lifecycle.ttlDays", "must not exceed 90 days."));
+        }
     }
 
     private static void ValidateService(ServiceDefinition service, List<ValidationError> errors)

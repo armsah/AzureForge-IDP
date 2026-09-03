@@ -10,6 +10,7 @@ public sealed class ServiceSpec
     public SecurityDefinition Security { get; init; } = new();
     public ObservabilityDefinition Observability { get; init; } = new();
     public CostDefinition Cost { get; init; } = new();
+    public LifecycleDefinition Lifecycle { get; init; } = new();
 }
 
 public sealed class ServiceDefinition
@@ -62,4 +63,9 @@ public sealed class ObservabilityDefinition
 public sealed class CostDefinition
 {
     public decimal MonthlyBudgetEur { get; init; }
+}
+
+public sealed class LifecycleDefinition
+{
+    public int TtlDays { get; init; }
 }

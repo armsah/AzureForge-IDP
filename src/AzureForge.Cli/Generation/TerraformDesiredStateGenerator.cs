@@ -49,6 +49,7 @@ public sealed class TerraformDesiredStateGenerator
             ApplicationInsightsEnabled: spec.Observability.AppInsights,
             Alerts: spec.Observability.Alerts,
             MonthlyBudgetEur: spec.Cost.MonthlyBudgetEur,
+            EnvironmentTtlDays: spec.Lifecycle.TtlDays,
             Tags: tags);
     }
 }

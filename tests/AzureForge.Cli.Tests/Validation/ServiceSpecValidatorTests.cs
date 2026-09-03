@@ -76,6 +76,44 @@ public sealed class ServiceSpecValidatorTests
         Assert.Contains(result.Errors, error => error.Path == "messaging.serviceBus.queues");
     }
 
+    [Fact]
+    public void Validate_LifecycleTtlBelowMinimum_ReturnsInvalid()
+    {
+        var spec = CreateValidSpec();
+        spec = Copy(spec, lifecycle: new LifecycleDefinition
+        {
+            TtlDays = 0
+        });
+
+        var result = _validator.Validate(spec);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(
+            result.Errors,
+            error =>
+                error.Path == "lifecycle.ttlDays" &&
+                error.Message == "must be greater than or equal to 1.");
+    }
+
+    [Fact]
+    public void Validate_LifecycleTtlAboveMaximum_ReturnsInvalid()
+    {
+        var spec = CreateValidSpec();
+        spec = Copy(spec, lifecycle: new LifecycleDefinition
+        {
+            TtlDays = 91
+        });
+
+        var result = _validator.Validate(spec);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(
+            result.Errors,
+            error =>
+                error.Path == "lifecycle.ttlDays" &&
+                error.Message == "must not exceed 90 days.");
+    }
+
     private static ServiceSpec CreateValidSpec() => new()
     {
         Service = new ServiceDefinition
@@ -119,6 +157,10 @@ public sealed class ServiceSpecValidatorTests
         Cost = new CostDefinition
         {
             MonthlyBudgetEur = 80
+        },
+        Lifecycle = new LifecycleDefinition
+        {
+            TtlDays = 30
         }
     };
 
@@ -134,7 +176,8 @@ public sealed class ServiceSpecValidatorTests
         RuntimeDefinition? runtime = null,
         ComputeDefinition? compute = null,
         MessagingDefinition? messaging = null,
-        SecurityDefinition? security = null) =>
+        SecurityDefinition? security = null,
+        LifecycleDefinition? lifecycle = null) =>
         new()
         {
             Service = spec.Service,
@@ -144,6 +187,7 @@ public sealed class ServiceSpecValidatorTests
             Messaging = messaging ?? spec.Messaging,
             Security = security ?? spec.Security,
             Observability = spec.Observability,
-            Cost = spec.Cost
+            Cost = spec.Cost,
+            Lifecycle = lifecycle ?? spec.Lifecycle
         };
 }
