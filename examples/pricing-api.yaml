@@ -13,12 +13,11 @@ compute:
   maxReplicas: 5
 
 data:
-  postgres: true
+  postgres: false
 
 messaging:
   serviceBus:
-    queues:
-      - price-update
+    queues: []
 
 security:
   publicIngress: false
