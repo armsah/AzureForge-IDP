@@ -6,9 +6,9 @@ The platform provides a governed golden path for application teams while keeping
 
 ## Status
 
-**P10 complete — AzureForge now performs scheduled Terraform drift detection through GitHub Actions using GitHub OIDC, remote state, `terraform plan -detailed-exitcode`, human-readable reports, retained artifacts, and visible workflow failure when infrastructure drift is detected.**
+**P11 complete — AzureForge now provides per-environment Azure cost budgets and bounded lifecycle configuration for disposable service environments, with validation across the developer-facing service specification and Terraform composition.**
 
-Next implementation phase: **P11 — cost controls and environment TTL**.
+Next implementation phase: **P12 — optional AKS namespace template**.
 
 ## Current Capabilities
 
@@ -63,8 +63,14 @@ AzureForge currently provides:
 - Terraform `-detailed-exitcode` classification for clean state, drift, and execution errors.
 - GitHub Actions job summaries and retained Terraform drift-report artifacts.
 - Visible workflow failure when drift is detected, without automatic remediation.
+- per-environment Azure cost budgets through Terraform;
+- declarative monthly budget configuration using `cost.monthlyBudgetEur`;
+- declarative environment lifecycle configuration using `lifecycle.ttlDays`;
+- environment TTL validation restricted to 1–90 days;
+- reusable Terraform cost-control module;
+- Terraform composition tests covering valid cost controls and invalid budget/TTL configuration.
 
-P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, and the P9 Azure Policy governance baseline. P9 adds Azure-side defense in depth by denying resources that violate the platform's approved-region, required-tag, or ownership-marker contract.
+P5 carries deterministic desired state into a reviewable GitHub pull request. After human review and merge, privileged GitHub OIDC Terraform workflows consume that approved artifact to provision the P6 compute baseline, optional P7 PaaS capabilities, the P8 observability baseline, the P9 Azure Policy governance baseline, and the P11 cost-control baseline. P10 continuously checks the deployed environment for Terraform drift without automatically remediating it. P11 extends the developer-facing contract with monthly cost budgets and bounded environment lifecycle configuration.
 
 ## CLI
 
@@ -794,6 +800,77 @@ Drift status: clean
 
 P10 exit criterion satisfied: **Terraform drift is visible through the scheduled plan workflow, GitHub Actions status, job summary, and retained drift-report artifact.**
 
+## P11 — Cost Controls and Environment Lifecycle
+
+P11 adds explicit cost and lifecycle controls to the AzureForge service contract.
+
+Developers declare the monthly Azure budget and maximum environment lifetime directly in the service specification:
+
+```yaml
+cost:
+  monthlyBudgetEur: 80
+
+lifecycle:
+  ttlDays: 30
+```
+
+The AzureForge CLI carries these settings into deterministic Terraform desired state:
+
+```text
+monthly_budget_eur
+environment_ttl_days
+```
+
+Environment lifecycle is bounded by the platform contract. `lifecycle.ttlDays` must be between 1 and 90 days. Invalid lifecycle configuration is rejected during service-spec validation and again at the Terraform environment boundary.
+
+Monthly budget values must be greater than zero.
+
+The reusable Terraform cost-control module is:
+
+```text
+infra/modules/cost-control
+```
+
+The module creates the Azure cost-management budget associated with the service environment's resource group.
+
+The environment composition is:
+
+```text
+reviewed service desired state
+        |
+        v
+infra/environments/dev
+        |
+        +-- existing service infrastructure
+        |
+        +-- cost control
+              +-- monthly Azure budget
+```
+
+P11 extends the existing deterministic desired-state pipeline rather than introducing a separate configuration path. For the representative `pricing-api` environment, the reviewed desired state contains:
+
+```json
+"monthly_budget_eur": 80,
+"environment_ttl_days": 30
+```
+
+The environment TTL is currently a validated lifecycle contract. P11 does not automatically destroy an environment when its TTL expires; automated expiration and teardown would require a separate execution mechanism.
+
+The P11 composition tests verify:
+
+- cost-control composition for a valid service environment;
+- rejection of an invalid environment TTL;
+- rejection of an invalid monthly budget;
+- preservation of the existing P7, P8, and P9 environment composition behavior.
+
+The complete `dev` environment Terraform test suite completed with:
+
+```text
+Success! 12 passed, 0 failed.
+```
+
+P11 therefore establishes cost and lifecycle policy as part of the same reviewed AzureForge service contract used for infrastructure provisioning, while preserving deterministic desired state, Terraform validation, shared environment composition, and the existing GitHub review boundary.
+
 ## Architecture Direction
 
 AzureForge separates the developer-facing control plane from privileged infrastructure execution.
@@ -843,6 +920,6 @@ The AzureForge API is not intended to hold broad Azure subscription `Owner` or `
 - [x] P8 — Add monitoring and standard alerts
 - [x] P9 — Add Azure Policy/tag/region checks
 - [x] P10 — Add drift detection and scheduled plan
-- [ ] P11 — Add cost controls and environment TTL
+- [x] P11 — Add cost controls and environment TTL
 - [ ] P12 — Add optional AKS namespace template
 - [ ] P13 — Polish documentation and onboarding demo
